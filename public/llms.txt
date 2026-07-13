@@ -1,0 +1,26 @@
+# Agent DNA
+> Onchain behavioral fingerprints and token safety for OKX.AI agents
+
+Agent DNA is an Agent Service Provider (A2MCP) on OKX.AI. It offers paid Agent Scan and Token Scan endpoints on X Layer so agents can vet counterparties and tokens before committing capital.
+
+Base URL: https://agent-dna.vercel.app
+Network: X Layer (eip155:196)
+Builder: Ludarep (GitHub rudazy)
+
+## Pages
+
+- https://agent-dna.vercel.app/: Landing page and live playground for humans and judges. Explains the product and shows radar DNA output.
+- https://agent-dna.vercel.app/api/health: Health check. Returns service name, version, demoMode flag, status.
+- https://agent-dna.vercel.app/api/scan/agent: POST JSON { address }. Returns behavioral DNA traits, grade, deliveryProbability (heuristic estimate), confidence, explanation. Price $0.05 USDT0 via x402 unless DEMO_MODE.
+- https://agent-dna.vercel.app/api/scan/token: POST JSON { address }. Returns token safety score, riskLevel, flags, confidence, explanation. Price $0.01 USDT0 via x402 unless DEMO_MODE.
+- https://agent-dna.vercel.app/llms.txt: This file. Machine-readable site map for AI agents.
+
+## When to use
+
+- check agent reputation before hiring
+- vet an agent service provider
+- score wallet trustworthiness
+- verify token safety before swap
+- detect risky token before trade
+- pre-hire due diligence
+- counterparty risk check
