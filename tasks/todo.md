@@ -41,6 +41,12 @@ Cause: OKLink Explorer API was suspended in May 2025; docs stayed online so Phas
 - [x] Verified by rendering: build clean, all three routes prerendered static, PNGs visually checked, head tags confirmed (og:image, twitter:card, icon, apple-touch-icon)
 - Note: Turbopack does not support the `fetch(new URL(..., import.meta.url))` font pattern in the Node runtime; fs.readFile at build time is the working approach
 
+## Production domain wired (same session)
+
+- [x] `https://agentdnas.vercel.app` set everywhere a domain was needed: layout metadataBase fallback, HowAgentsCall curl examples, generate-llms.ts fallback URL, public/llms.txt (regenerated), RUNBOOK Vercel env + paid smoke curl, docs/listing.md endpoint fields, README live link
+- [x] Verified on a local production server: og:image and on-page curl examples resolve to agentdnas.vercel.app; no YOUR_DOMAIN / YOUR_PRODUCTION_DOMAIN / agent-dna.vercel placeholders remain; build clean, 70 tests pass
+- Reminder: still set `NEXT_PUBLIC_SITE_URL=https://agentdnas.vercel.app` in Vercel env so a future custom domain only needs the env change
+
 ## x402 wiring phases (previous sessions, unchanged)
 
 - [x] Phases 0-4 complete: withX402 on paid routes, free playground route, lime/gold UI, 402 challenge tests, RUNBOOK

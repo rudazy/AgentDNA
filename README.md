@@ -2,6 +2,8 @@
 
 Onchain behavioral fingerprints and token safety scores for the OKX.AI agent economy. Built by Ludarep.
 
+Live: https://agentdnas.vercel.app
+
 One engine, two paid scans on X Layer:
 
 | Scan | Endpoint | Price |

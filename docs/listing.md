@@ -43,14 +43,14 @@ If the form takes a single price, register two services with the prices above. F
 ## Endpoint
 
 ```
-https://YOUR_PRODUCTION_DOMAIN
+https://agentdnas.vercel.app
 ```
 
 Concrete paths:
 
-- `https://YOUR_PRODUCTION_DOMAIN/api/scan/agent`
-- `https://YOUR_PRODUCTION_DOMAIN/api/scan/token`
-- `https://YOUR_PRODUCTION_DOMAIN/api/health`
+- `https://agentdnas.vercel.app/api/scan/agent`
+- `https://agentdnas.vercel.app/api/scan/token`
+- `https://agentdnas.vercel.app/api/health`
 
 ## Request body (both scans)
 

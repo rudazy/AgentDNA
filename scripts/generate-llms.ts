@@ -8,7 +8,7 @@ import { join } from "path";
 const config = {
   name: "Agent DNA",
   tagline: "Onchain behavioral fingerprints and token safety for OKX.AI agents",
-  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://agent-dna.vercel.app",
+  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://agentdnas.vercel.app",
   description:
     "Agent DNA is an Agent Service Provider (A2MCP) on OKX.AI. It offers paid Agent Scan and Token Scan endpoints on X Layer so agents can vet counterparties and tokens before committing capital.",
   routes: [

@@ -95,7 +95,7 @@ OKX_API_KEY=...
 OKX_SECRET_KEY=...
 OKX_PASSPHRASE=...
 X402_PAYTO_ADDRESS=0xYourSellerWallet
-NEXT_PUBLIC_SITE_URL=https://your-domain.vercel.app
+NEXT_PUBLIC_SITE_URL=https://agentdnas.vercel.app
 ```
 
 Optional: `OKX_FACILITATOR_BASE_URL` only if OKX gives a non-default facilitator host.
@@ -115,7 +115,7 @@ Prereqs: production deploy with DEMO_MODE=false, valid OKX SA keys, `X402_PAYTO_
 1. Unpaid probe (expect 402):
 
 ```bash
-curl -i -X POST https://YOUR_DOMAIN/api/scan/agent ^
+curl -i -X POST https://agentdnas.vercel.app/api/scan/agent ^
   -H "Content-Type: application/json" ^
   -d "{\"address\":\"0x...\"}"
 ```

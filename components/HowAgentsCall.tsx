@@ -4,12 +4,12 @@ import { useState } from "react";
 import { PRICES } from "@/lib/constants";
 import { CornerOrnaments, SectionLabel } from "./Ornament";
 
-const AGENT_EXAMPLE = `curl -X POST https://YOUR_DOMAIN/api/scan/agent \\
+const AGENT_EXAMPLE = `curl -X POST https://agentdnas.vercel.app/api/scan/agent \\
   -H "Content-Type: application/json" \\
   -H "PAYMENT-SIGNATURE: <x402-proof>" \\
   -d '{"address":"0x..."}'`;
 
-const TOKEN_EXAMPLE = `curl -X POST https://YOUR_DOMAIN/api/scan/token \\
+const TOKEN_EXAMPLE = `curl -X POST https://agentdnas.vercel.app/api/scan/token \\
   -H "Content-Type: application/json" \\
   -H "PAYMENT-SIGNATURE: <x402-proof>" \\
   -d '{"address":"0x..."}'`;

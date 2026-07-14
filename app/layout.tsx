@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   description:
     "Onchain behavioral fingerprints and token safety scores for OKX.AI agents on X Layer. Vet agents before hiring. Check tokens before swapping.",
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://agentdnas.vercel.app",
   ),
   openGraph: {
     title: "Agent DNA",
