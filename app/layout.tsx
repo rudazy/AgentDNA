@@ -27,6 +27,12 @@ export const metadata: Metadata = {
       "Every agent has DNA. Read it before you commit money. Agent and token scans on X Layer.",
     type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "Agent DNA",
+    description:
+      "Every agent has DNA. Read it before you commit money. Agent and token scans on X Layer.",
+  },
   robots: {
     index: true,
     follow: true,

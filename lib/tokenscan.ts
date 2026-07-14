@@ -1,6 +1,12 @@
 /**
  * Token Scan safety scoring.
  * Formula-based behavioral scoring. Deterministic templates. No EigenTrust / graphs.
+ *
+ * Data-source note: OKX OS exposes no contract source verification endpoint,
+ * so the old verification component is replaced by trust signals
+ * (communityRecognized, riskControlLevel, honeypot tag) with weight
+ * redistributed to holders, age, and trade patterns. Raw ERC-20 transfer
+ * lists are also unavailable; trade patterns score DEX trade flow instead.
  */
 
 import type {
@@ -8,11 +14,25 @@ import type {
   TokenHolder,
   TokenInfo,
   TokenScanResponse,
-  TokenTransfer,
+  TokenTrade,
 } from "./types";
 import { SERVICE_NAME, SERVICE_VERSION } from "./types";
 
 const DAY_MS = 86_400_000;
+
+/**
+ * Tunable composite weights (must sum to 1).
+ * Old formula: verification 0.35, holders 0.25, age 0.15, transfers 0.15, supply 0.10.
+ * Verification is unavailable on OKX OS; its weight is redistributed to
+ * holders, age, and trades, with trust signals keeping a reduced share.
+ */
+export const TOKEN_SCORE_WEIGHTS = {
+  trust: 0.2,
+  holders: 0.3,
+  age: 0.2,
+  trades: 0.2,
+  supply: 0.1,
+} as const;
 
 function clamp(n: number, lo = 0, hi = 100): number {
   if (!Number.isFinite(n)) return lo;
@@ -23,26 +43,60 @@ function roundScore(n: number): number {
   return Math.round(clamp(n));
 }
 
-/** Contract verification: heavy weight component 0-100. */
-export function scoreVerification(verified: boolean): number {
-  return verified ? 100 : 15;
+/**
+ * Trust signals: replaces contract verification (heavy weight component 0-100).
+ * Honeypot tag zeroes the component. riskControlLevel (0-5, data source) sets
+ * the base; community recognition lifts it.
+ */
+export function scoreTrustSignals(info: TokenInfo): number {
+  if (info.honeypot) return 0;
+
+  let base: number;
+  switch (info.riskControlLevel) {
+    case 1:
+      base = 90;
+      break;
+    case 2:
+      base = 65;
+      break;
+    case 3:
+      base = 40;
+      break;
+    case 4:
+      base = 12;
+      break;
+    case 5:
+      base = 5;
+      break;
+    default:
+      // null or 0: undefined risk level, neutral base.
+      base = 45;
+  }
+
+  if (info.communityRecognized) {
+    base = Math.min(100, base + 30);
+  }
+  return roundScore(base);
 }
 
 /**
  * Holder concentration: top 10 holders percentage.
+ * Uses the holder list when present, else the source-provided top 10 percent.
  * Over 70% is a strong red flag (low safety contribution).
  */
-export function scoreHolderConcentration(holders: TokenHolder[]): {
-  score: number;
-  top10Pct: number;
-} {
-  if (holders.length === 0) {
-    return { score: 40, top10Pct: 0 };
+export function scoreHolderConcentration(
+  holders: TokenHolder[],
+  top10FromSource: number | null = null,
+): { score: number; top10Pct: number; hasData: boolean } {
+  let top10Pct: number;
+  if (holders.length > 0) {
+    const sorted = [...holders].sort((a, b) => b.percentage - a.percentage);
+    top10Pct = sorted.slice(0, 10).reduce((acc, h) => acc + h.percentage, 0);
+  } else if (top10FromSource !== null) {
+    top10Pct = top10FromSource;
+  } else {
+    return { score: 40, top10Pct: 0, hasData: false };
   }
-
-  const sorted = [...holders].sort((a, b) => b.percentage - a.percentage);
-  const top10 = sorted.slice(0, 10);
-  const top10Pct = top10.reduce((acc, h) => acc + h.percentage, 0);
 
   // 0% concentration -> 100, 70% -> ~25, 90%+ -> near 0
   let score: number;
@@ -52,7 +106,7 @@ export function scoreHolderConcentration(holders: TokenHolder[]): {
   else if (top10Pct <= 90) score = 29 - (top10Pct - 70) * 1.1;
   else score = Math.max(0, 7 - (top10Pct - 90) * 0.7);
 
-  return { score: roundScore(score), top10Pct };
+  return { score: roundScore(score), top10Pct, hasData: true };
 }
 
 /** Token age: older is safer for this heuristic. */
@@ -74,123 +128,84 @@ export function scoreTokenAge(
 }
 
 /**
- * Transfer pattern sanity: one-directional flow to few addresses is a flag.
- * Returns score 0-100 (higher = healthier distribution of flow).
+ * Trade pattern sanity over DEX trades: few traders, one-sided flow,
+ * or a single dominant trader are flags. Higher = healthier trading.
  */
-export function scoreTransferPatterns(transfers: TokenTransfer[]): {
+export function scoreTradePatterns(trades: TokenTrade[]): {
   score: number;
-  uniqueSenders: number;
-  uniqueReceivers: number;
-  oneWayRatio: number;
+  uniqueTraders: number;
+  buyCount: number;
+  sellCount: number;
+  oneSidedRatio: number;
 } {
-  if (transfers.length === 0) {
+  if (trades.length === 0) {
     return {
       score: 40,
-      uniqueSenders: 0,
-      uniqueReceivers: 0,
-      oneWayRatio: 0,
+      uniqueTraders: 0,
+      buyCount: 0,
+      sellCount: 0,
+      oneSidedRatio: 0,
     };
   }
 
-  const senders = new Set<string>();
-  const receivers = new Set<string>();
-  const pairCounts = new Map<string, number>();
+  const traders = new Map<string, number>();
+  let buyCount = 0;
+  let sellCount = 0;
 
-  for (const t of transfers) {
-    const from = t.from.toLowerCase();
-    const to = t.to.toLowerCase();
-    if (from) senders.add(from);
-    if (to) receivers.add(to);
-    if (from && to) {
-      const key = `${from}->${to}`;
-      pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
+  for (const t of trades) {
+    if (t.trader) {
+      traders.set(t.trader, (traders.get(t.trader) ?? 0) + 1);
     }
+    if (t.side === "buy") buyCount += 1;
+    else if (t.side === "sell") sellCount += 1;
   }
 
-  // Directed edges that never reverse.
-  let oneWay = 0;
-  let directed = 0;
-  const seen = new Set<string>();
-  for (const t of transfers) {
-    const from = t.from.toLowerCase();
-    const to = t.to.toLowerCase();
-    if (!from || !to) continue;
-    const forward = `${from}->${to}`;
-    if (seen.has(forward)) continue;
-    seen.add(forward);
-    directed += 1;
-    const reverse = `${to}->${from}`;
-    if (!pairCounts.has(reverse)) oneWay += 1;
-  }
+  const sided = buyCount + sellCount;
+  // 0 = perfectly balanced flow, 1 = all buys or all sells.
+  const oneSidedRatio = sided > 0 ? Math.abs(buyCount - sellCount) / sided : 0;
 
-  const oneWayRatio = directed > 0 ? oneWay / directed : 0;
-  const receiverConcentration =
-    receivers.size > 0 ? 1 / receivers.size : 1;
-
-  // Many unique participants and two-way flow score higher.
+  const uniqueTraders = traders.size;
   const diversity = clamp(
-    (Math.log10(1 + senders.size + receivers.size) / Math.log10(41)) * 60,
+    (Math.log10(1 + uniqueTraders) / Math.log10(41)) * 55,
   );
-  const flowScore = clamp((1 - oneWayRatio) * 40);
-  const sinkPenalty = clamp(receiverConcentration * 30, 0, 30);
+  const flowScore = clamp((1 - oneSidedRatio) * 35);
 
-  const score = roundScore(diversity + flowScore - sinkPenalty + 20);
-  return {
-    score,
-    uniqueSenders: senders.size,
-    uniqueReceivers: receivers.size,
-    oneWayRatio,
-  };
+  const maxByOne = traders.size > 0 ? Math.max(...traders.values()) : 0;
+  const dominantShare = trades.length > 0 ? maxByOne / trades.length : 0;
+  const dominancePenalty = clamp((dominantShare - 0.4) * 45, 0, 25);
+
+  const score = roundScore(diversity + flowScore - dominancePenalty + 10);
+  return { score, uniqueTraders, buyCount, sellCount, oneSidedRatio };
 }
 
 /**
- * Supply mechanics visible in data: mint concentration at deploy.
- * Approximated from earliest transfers leaving a single address with large share.
+ * Supply mechanics visible in data: top holder dominance and developer
+ * position share (advanced-info) proxy mint/deploy concentration.
  */
 export function scoreSupplyMechanics(
   holders: TokenHolder[],
-  transfers: TokenTransfer[],
-  creationTimeMs: number | null,
+  info: Pick<TokenInfo, "devHoldPercent" | "creationTimeMs">,
+  nowMs = Date.now(),
 ): { score: number; mintConcentration: number } {
-  if (holders.length === 0 && transfers.length === 0) {
-    return { score: 45, mintConcentration: 0 };
-  }
-
   const sortedHolders = [...holders].sort(
     (a, b) => b.percentage - a.percentage,
   );
-  const top1 = sortedHolders[0]?.percentage ?? 0;
+  const top1 = sortedHolders[0]?.percentage ?? null;
+  const dev = info.devHoldPercent;
 
-  // Early transfer dominance: first 10 transfers from one address.
-  let earlyDominance = 0;
-  if (transfers.length > 0) {
-    const ordered = [...transfers]
-      .filter((t) => t.timestampMs > 0)
-      .sort((a, b) => a.timestampMs - b.timestampMs)
-      .slice(0, 10);
-    if (ordered.length > 0) {
-      const counts = new Map<string, number>();
-      for (const t of ordered) {
-        const f = t.from.toLowerCase();
-        counts.set(f, (counts.get(f) ?? 0) + 1);
-      }
-      const maxFrom = Math.max(...counts.values());
-      earlyDominance = maxFrom / ordered.length;
-    }
+  if (top1 === null && dev === null) {
+    return { score: 45, mintConcentration: 0 };
   }
 
-  // Young + top holder huge = mint concentration risk.
+  // Young + concentrated = mint concentration risk.
   const ageDays =
-    creationTimeMs !== null
-      ? Math.max(0, (Date.now() - creationTimeMs) / DAY_MS)
+    info.creationTimeMs !== null
+      ? Math.max(0, (nowMs - info.creationTimeMs) / DAY_MS)
       : 999;
   const youngBoost = ageDays < 14 ? 1.2 : 1;
 
-  const mintConcentration = clamp(
-    (top1 / 100) * 0.6 + earlyDominance * 0.4,
-    0,
-    1,
-  ) * youngBoost;
+  const concentrationPct = Math.max(top1 ?? 0, dev ?? 0);
+  const mintConcentration = clamp(concentrationPct / 100, 0, 1) * youngBoost;
 
   // High mint concentration lowers safety score.
   const score = roundScore(100 - mintConcentration * 85);
@@ -207,40 +222,59 @@ export function riskLevelFromScore(score: number): RiskLevel {
 export function computeTokenConfidence(
   info: TokenInfo,
   holders: TokenHolder[],
-  transfers: TokenTransfer[],
+  trades: TokenTrade[],
 ): number {
   let c = 20;
-  if (info.verified) c += 15;
+  if (info.riskControlLevel !== null) c += 10;
+  if (info.communityRecognized) c += 5;
   if (info.creationTimeMs !== null) c += 10;
-  if (info.totalSupply !== "0") c += 10;
+  if (info.totalSupply !== "0") c += 5;
   if (holders.length >= 5) c += 20;
   else if (holders.length > 0) c += 10;
-  if (transfers.length >= 20) c += 20;
-  else if (transfers.length > 0) c += 10;
+  else if (info.top10HoldPercent !== null) c += 10;
+  if (trades.length >= 20) c += 20;
+  else if (trades.length > 0) c += 10;
   if (info.holderCount !== null && info.holderCount > 50) c += 5;
   return roundScore(c);
 }
 
 export function buildTokenFlags(input: {
-  verified: boolean;
+  info: Pick<
+    TokenInfo,
+    "honeypot" | "riskControlLevel" | "communityRecognized" | "creationTimeMs"
+  >;
   top10Pct: number;
+  holderDataAvailable: boolean;
   ageScore: number;
-  transfer: ReturnType<typeof scoreTransferPatterns>;
+  trade: ReturnType<typeof scoreTradePatterns>;
+  tradeCount: number;
   mintConcentration: number;
-  creationTimeMs: number | null;
+  nowMs?: number;
 }): string[] {
   const flags: string[] = [];
+  const nowMs = input.nowMs ?? Date.now();
+  const { info } = input;
 
-  if (!input.verified) {
-    flags.push("Contract source is not verified on the explorer");
+  if (info.honeypot) {
+    flags.push("Data source flags this token as a honeypot");
   }
-  if (input.top10Pct >= 90) {
+  if (info.riskControlLevel !== null && info.riskControlLevel >= 4) {
+    flags.push("Data source risk control level is high");
+  }
+  if (info.riskControlLevel === null && !info.communityRecognized) {
+    flags.push(
+      "Contract verification status unavailable on this data source; trust signal limited",
+    );
+  }
+  if (!input.holderDataAvailable) {
+    flags.push("Holder distribution unavailable on this data source");
+  } else if (input.top10Pct >= 90) {
     flags.push("Top 10 holders control over 90 percent of supply");
   } else if (input.top10Pct >= 70) {
     flags.push("Top 10 holders control over 70 percent of supply");
   }
-  if (input.creationTimeMs !== null) {
-    const ageDays = (Date.now() - input.creationTimeMs) / DAY_MS;
+  if (info.creationTimeMs !== null) {
+    const ageDays = (nowMs - info.creationTimeMs) / DAY_MS;
     if (ageDays < 7) {
       flags.push("Token is less than 7 days old");
     } else if (ageDays < 30) {
@@ -249,39 +283,40 @@ export function buildTokenFlags(input: {
   } else {
     flags.push("Token creation time is unknown");
   }
-  if (input.transfer.oneWayRatio >= 0.85 && input.transfer.uniqueReceivers <= 5) {
-    flags.push("Transfers are mostly one-directional into few addresses");
+  if (
+    input.tradeCount >= 3 &&
+    input.trade.oneSidedRatio >= 0.85 &&
+    input.trade.uniqueTraders <= 5
+  ) {
+    flags.push("DEX trade flow is one-sided among very few traders");
   }
-  if (input.transfer.uniqueReceivers === 1 && input.transfer.uniqueSenders >= 1) {
-    flags.push("Nearly all transfers sink to a single receiver");
+  if (input.trade.uniqueTraders === 1 && input.tradeCount >= 3) {
+    flags.push("All observed DEX trades come from a single trader");
   }
   if (input.mintConcentration >= 0.7) {
-    flags.push("High mint or deploy concentration among early holders");
+    flags.push("High mint or deploy concentration among top holders");
   }
-  if (input.ageScore <= 25 && !input.verified) {
-    flags.push("Unverified and very new: elevated interaction risk");
+  if (input.ageScore <= 25 && info.riskControlLevel !== null && info.riskControlLevel >= 3) {
+    flags.push("Risky and very new: elevated interaction risk");
   }
 
   return flags;
 }
 
-/**
- * Weighted safety score 0-100.
- * Weights: verification 0.35, holders 0.25, age 0.15, transfers 0.15, supply 0.10.
- */
+/** Weighted safety score 0-100 (weights from TOKEN_SCORE_WEIGHTS). */
 export function computeTokenScore(parts: {
-  verification: number;
+  trust: number;
   holders: number;
   age: number;
-  transfers: number;
+  trades: number;
   supply: number;
 }): number {
   return roundScore(
-    parts.verification * 0.35 +
-      parts.holders * 0.25 +
-      parts.age * 0.15 +
-      parts.transfers * 0.15 +
-      parts.supply * 0.1,
+    parts.trust * TOKEN_SCORE_WEIGHTS.trust +
+      parts.holders * TOKEN_SCORE_WEIGHTS.holders +
+      parts.age * TOKEN_SCORE_WEIGHTS.age +
+      parts.trades * TOKEN_SCORE_WEIGHTS.trades +
+      parts.supply * TOKEN_SCORE_WEIGHTS.supply,
   );
 }
 
@@ -300,7 +335,7 @@ export function buildTokenExplanation(
 
   if (flags.length === 0) {
     sentences.push(
-      "No major structural red flags were raised from verification, holder concentration, age, or transfer patterns.",
+      "No major structural red flags were raised from trust signals, holder concentration, age, or trade patterns.",
     );
   } else {
     sentences.push(`Primary flags: ${flags.slice(0, 3).join("; ")}.`);
@@ -328,36 +363,34 @@ export function computeTokenScan(
   address: string,
   info: TokenInfo,
   holders: TokenHolder[],
-  transfers: TokenTransfer[],
+  trades: TokenTrade[],
   nowMs = Date.now(),
 ): TokenScanResponse {
-  const verification = scoreVerification(info.verified);
-  const holderPart = scoreHolderConcentration(holders);
+  const trust = scoreTrustSignals(info);
+  const holderPart = scoreHolderConcentration(holders, info.top10HoldPercent);
   const age = scoreTokenAge(info.creationTimeMs, nowMs);
-  const transferPart = scoreTransferPatterns(transfers);
-  const supplyPart = scoreSupplyMechanics(
-    holders,
-    transfers,
-    info.creationTimeMs,
-  );
+  const tradePart = scoreTradePatterns(trades);
+  const supplyPart = scoreSupplyMechanics(holders, info, nowMs);
 
   const score = computeTokenScore({
-    verification,
+    trust,
     holders: holderPart.score,
     age,
-    transfers: transferPart.score,
+    trades: tradePart.score,
     supply: supplyPart.score,
   });
 
   const riskLevel = riskLevelFromScore(score);
-  const confidence = computeTokenConfidence(info, holders, transfers);
+  const confidence = computeTokenConfidence(info, holders, trades);
   const flags = buildTokenFlags({
-    verified: info.verified,
+    info,
     top10Pct: holderPart.top10Pct,
+    holderDataAvailable: holderPart.hasData,
     ageScore: age,
-    transfer: transferPart,
+    trade: tradePart,
+    tradeCount: trades.length,
     mintConcentration: supplyPart.mintConcentration,
-    creationTimeMs: info.creationTimeMs,
+    nowMs,
   });
 
   const explanation = buildTokenExplanation(

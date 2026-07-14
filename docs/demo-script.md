@@ -63,7 +63,7 @@ trustgated.xyz
 ## Prep checklist
 
 - [ ] DEMO_MODE=true on the deploy used for the video
-- [ ] OKLINK_API_KEY set so scans return real data
+- [ ] OKXOS_API_KEY / OKXOS_SECRET_KEY / OKXOS_PASSPHRASE set so scans return real data
 - [ ] Pick one active agent/wallet address with enough history for a visible radar
 - [ ] Pick one obviously risky token (unverified or concentrated) for flags
 - [ ] Disable browser blue highlights / dark theme already default

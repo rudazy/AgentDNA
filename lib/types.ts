@@ -57,12 +57,18 @@ export interface TokenScanResponse {
 
 export interface AddressSummary {
   address: string;
+  /** Earliest observed activity. Limited by the data source history window. */
   firstSeenMs: number | null;
   lastSeenMs: number | null;
+  /** Transactions observed within the data source history window. */
   txCount: number;
   balance: string;
   balanceSymbol: string;
   isFresh: boolean;
+  /** Days of history the data source exposes; null means unlimited. */
+  historyWindowDays: number | null;
+  /** True when history likely extends beyond the visible window. */
+  historyWindowCapped: boolean;
 }
 
 export interface NormalizedTx {
@@ -81,10 +87,20 @@ export interface TokenInfo {
   address: string;
   name: string;
   symbol: string;
+  /** Circulating supply from the data source ("0" when unknown). */
   totalSupply: string;
   decimals: number;
   creationTimeMs: number | null;
-  verified: boolean;
+  /** Listed on a top CEX or community verified (data source tag). */
+  communityRecognized: boolean;
+  /** Data source risk control level 0-5 (0 undefined); null when unavailable. */
+  riskControlLevel: number | null;
+  /** Data source honeypot tag. */
+  honeypot: boolean;
+  /** Top 10 holders share of supply in percent; null when unavailable. */
+  top10HoldPercent: number | null;
+  /** Developer position share of supply in percent; null when unavailable. */
+  devHoldPercent: number | null;
   holderCount: number | null;
 }
 
@@ -94,12 +110,14 @@ export interface TokenHolder {
   percentage: number;
 }
 
-export interface TokenTransfer {
+/** One DEX trade for the token. Replaces raw ERC-20 transfer rows. */
+export interface TokenTrade {
   hash: string;
   timestampMs: number;
-  from: string;
-  to: string;
+  trader: string;
+  side: "buy" | "sell" | "unknown";
   amount: string;
+  volumeUsd: number;
 }
 
 export interface Paging {

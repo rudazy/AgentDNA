@@ -128,45 +128,56 @@ Agent DNA listing copy should include literal triggers: "check agent reputation 
 
 ---
 
-## 4. OKLink X Layer API
+## 4. Chain data source
 
-**Base URL:** `https://www.oklink.com/api/v5/explorer`
+### 4a. OKX OS Web3 API migration (2026-07-14)
 
-**Auth header:** `Ok-Access-Key: <OKLINK_API_KEY>`
+The OKLink Explorer API (section 4b below, kept for history) was suspended for new keys; every call to its explorer endpoints returns 401. Data layer migrated to the OKX Onchain OS Web3 API on `web3.okx.com`. Do not use any OKLink-hosted API endpoint.
 
-**Chain short name for X Layer:** `XLAYER` (also appears as `XLAYER` / `XLAYER_TESTNET` in contract verification plugin support lists).
+**Base URL:** `https://web3.okx.com` (paths under `/api/v6/`)
 
-**Endpoints used by Agent DNA** (from community SDKs and OKLink docs structure):
+**Chain identifier:** `chainIndex` / `chains` = `196` for X Layer (confirmed in Supported Networks table; Wallet API, Trade, Market, Payments all checked for X Layer).
 
-| Purpose | Method / path |
-| --- | --- |
-| Address summary | `GET /address/address-summary?chainShortName=XLAYER&address=` |
-| Normal txs | `GET /address/normal-transaction-list?chainShortName=XLAYER&address=&page=&limit=` |
-| Token txs for address | `GET /address/token-transaction-list?chainShortName=XLAYER&address=&page=&limit=` |
-| Token list / info | `GET /token/token-list?chainShortName=XLAYER&protocolType=token_20&tokenContractAddress=&page=&limit=` |
-| Contract verified info | `GET /contract/verify-contract-info?chainShortName=XLAYER&contractAddress=` |
-| Token holders (best effort) | `GET /token/position-list?chainShortName=XLAYER&tokenContractAddress=&page=&limit=` (path may vary; client tries known aliases and degrades gracefully) |
-| Token transfers | `GET /token/token-transaction-list?chainShortName=XLAYER&tokenContractAddress=&page=&limit=` or address token-tx list filtered by contract |
+**Auth (confirmed at /onchainos/dev-docs/home/api-access-and-usage):**
 
-**Response envelope:**
+- `OK-ACCESS-KEY`: API key from dev portal project
+- `OK-ACCESS-TIMESTAMP`: ISO UTC, e.g. `2020-12-08T09:08:57.715Z`; must be within 30 seconds of server time
+- `OK-ACCESS-PASSPHRASE`: passphrase chosen at key creation
+- `OK-ACCESS-SIGN`: `Base64(HMAC-SHA256(timestamp + METHOD + requestPath + body, secretKey))`; requestPath includes query string for GET; body omitted for GET, raw JSON body included for POST
+- No `OK-ACCESS-PROJECT` header on the v6 Onchain OS docs (that was old WaaS v5)
 
-```json
-{ "code": "0", "msg": "", "data": [ ... ] }
-```
+Key creation: web3.okx.com/build/dev-portal, Connect Wallet, verify signature, link email and phone, then create project (max 3) and API key (max 3 per project) with passphrase; secret shown via View details.
 
-**Address summary fields (typed from open source adapters):** `firstTransactionTime`, `lastTransactionTime`, `transactionCount`, `balance`, `balanceSymbol`, `address`, `verifying`, etc.
+**Envelope:** `{ "code": "0", "msg": "", "data": [ ... ] }`. Non-zero code = error.
 
-**Rate limits:** Official public rate-limit numbers were not available in the pages we could load. Treat as shared API quota; use request timeouts, one retry with backoff on 5xx, and thin per-invocation in-memory cache. Free tier historically advertised large monthly call budgets on blog posts; do not rely on an exact number without a portal screenshot.
+**Endpoints used by Agent DNA (all confirmed against live doc pages):**
 
-**API key:** Apply via OKLink docs quickstart: https://www.oklink.com/docs/en/#quickstart-guide-getting-started
+| Purpose | Method / path | Tier |
+| --- | --- | --- |
+| Address balances | `GET /api/v6/dex/balance/all-token-balances-by-address?address=&chains=196` | Free |
+| Tx history by address | `GET /api/v6/dex/post-transaction/transactions-by-address?address=&chains=196&cursor=&limit=20` | Free |
+| Token metadata | `POST /api/v6/dex/market/token/basic-info` body `[{chainIndex, tokenContractAddress}]` | Basic |
+| Token trading info (supply, holder count, liquidity) | `POST /api/v6/dex/market/price-info` body `[{chainIndex, tokenContractAddress}]` | Premium |
+| Token risk and age (createTime, riskControlLevel, top10HoldPercent, honeypot and dev tags) | `/api/v6/dex/market/token/advanced-info` (verb not rendered in docs; POST assumed from sibling endpoints, smoke script verifies, GET fallback wired) | Premium |
+| Token top holders | `GET /api/v6/dex/market/token/holder?chainIndex=196&tokenContractAddress=&cursor=&limit=` (top 100, `holdPercent`) | Premium |
+| Token trades activity | `GET /api/v6/dex/market/trades?chainIndex=196&tokenContractAddress=&limit=` (max 500) | Basic |
 
-**Risk flag:** Moralis migration guides (2025) claimed OKLink Explorer API suspension. As of 2026-07-13 the docs and explorer still present X Layer endpoints and third-party SDKs still call them. Monitor for deprecation. If OKLink blocks or retires endpoints, swap the data layer only (`lib/oklink.ts`); scoring stays pure.
+**Tx history semantics:** 6-month window only, descending, cursor paging, max 20 records per request on a single chain. Response rows: `txHash`, `itype` (0 native, 1 internal, 2 token), `methodId`, `txTime` (ms), `from[]/to[]` `{address, amount}`, `tokenContractAddress`, `amount`, `symbol`, `txFee`, `txStatus` (`success|fail|pending`), `hitBlacklist`.
 
-Sources:
+**Rate limits and pricing (from /onchainos/dev-docs/market/market-api-fee):** no published per-endpoint RPS; free endpoints cost nothing; Basic tier 100K free calls/month then $0.0001/call; Premium tier 100K free calls/month then $0.0002/call; overage billed via x402 or subscription in USDG/USDT on X Layer. Exhausted quota returns HTTP 402; client surfaces it as RateLimited with a quota message.
 
-- https://www.oklink.com/docs/en/
-- https://github.com/dapplink-labs/chain-explorer-api (oklink adapter)
-- https://docs.rs/oklink (Rust client: base `https://www.oklink.com/api/v5/explorer`, header `Ok-Access-Key`)
+**Endpoint gaps found (no equivalent, do not invent):**
+
+1. Contract source verification status: no endpoint on OKX OS Web3 API. Old `verified` flag replaced by `communityRecognized` (basic-info tagList) plus `riskControlLevel` and honeypot/dev tags (advanced-info). Scoring weight redistributed; flag text notes the substitution.
+2. Address summary since genesis (total tx count, true first-seen): only derivable from the 6-month tx window. `AddressSummary` now carries `historyWindowDays = 183`; longevity is computed from observed age only and confidence is reduced when the window saturates.
+3. ERC-20 transfer event list: no raw transfer endpoint. Replaced by DEX trades activity (`/market/trades`); transfer-pattern scoring reworked to trade-pattern scoring (trader diversity, one-sided buy/sell flow).
+4. Total supply: only `circSupply` (circulating) available via price-info; stored in `totalSupply` field, treated as supply signal.
+
+**DNS note:** `*.okx.com` fails to resolve on this dev machine (ISP-level DNS filtering; even direct connect to the Cloudflare IP times out). Docs were fetched via r.jina.ai proxy. Production (Vercel) resolves fine. Local smoke runs need a VPN or a DNS override; smoke script prints a clear hint when it sees ENOTFOUND.
+
+### 4b. OKLink Explorer API (dead, historical)
+
+The original data layer was built on the OKLink Explorer API (explorer-style endpoints under an `/api/v5/explorer` prefix, `chainShortName=XLAYER`, same OK-ACCESS signed headers). That API was suspended in May 2025; new keys receive 401 on every endpoint even with correct signing. The docs pages remained online, which is why Phase 0 research initially picked it. Old endpoint table removed so no dead URLs linger in this repo. Full mapping from old fetchers to OKX OS endpoints is in section 4a.
 
 ---
 
@@ -188,5 +199,5 @@ Sources:
 1. A2MCP + x402 HTTPS endpoints on Vercel (Next.js App Router).
 2. `lib/payment.ts` wraps verification; `DEMO_MODE=true` for playground; production requires OKX SA credentials + `PAY_TO`.
 3. Prefer dynamic/optional use of `@okxweb3/x402-*` when credentials exist; otherwise explicit 402, never silent pass.
-4. OKLink as sole chain data source for X Layer; pure scoring in `lib/dna.ts` and `lib/tokenscan.ts`.
+4. OKX OS Web3 API (`lib/chaindata.ts`) as sole chain data source for X Layer; pure scoring in `lib/dna.ts` and `lib/tokenscan.ts`.
 5. Listing assets in `docs/listing.md` with keyword-dense triggers and A2MCP registration fields.

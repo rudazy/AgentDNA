@@ -51,6 +51,8 @@ describe("fresh wallet (zero txs)", () => {
     balance: "0",
     balanceSymbol: "OKB",
     isFresh: true,
+    historyWindowDays: null,
+    historyWindowCapped: false,
   };
 
   it("scores reliability 0", () => {
@@ -103,6 +105,8 @@ describe("single-counterparty wallet", () => {
       balance: "1",
       balanceSymbol: "OKB",
       isFresh: false,
+      historyWindowDays: null,
+      historyWindowCapped: false,
     };
     const result = computeAgentDna(SELF, summary, txs, NOW);
     expect(result.traits.counterpartyDiversity).toBeLessThan(25);
@@ -183,6 +187,8 @@ describe("longevity log scale", () => {
       balance: "0",
       balanceSymbol: "OKB",
       isFresh: false,
+      historyWindowDays: null,
+      historyWindowCapped: false,
     };
     const twoYear: AddressSummary = {
       address: SELF,
@@ -192,6 +198,8 @@ describe("longevity log scale", () => {
       balance: "0",
       balanceSymbol: "OKB",
       isFresh: false,
+      historyWindowDays: null,
+      historyWindowCapped: false,
     };
     const a = scoreLongevity(week, NOW);
     const b = scoreLongevity(twoYear, NOW);
@@ -272,6 +280,8 @@ describe("confidence", () => {
       balance: "0",
       balanceSymbol: "OKB",
       isFresh: false,
+      historyWindowDays: null,
+      historyWindowCapped: false,
     };
     const rich: AddressSummary = {
       address: SELF,
@@ -281,6 +291,8 @@ describe("confidence", () => {
       balance: "0",
       balanceSymbol: "OKB",
       isFresh: false,
+      historyWindowDays: null,
+      historyWindowCapped: false,
     };
     const txsSparse = [
       tx({ from: SELF, to: "0x2", timestampMs: NOW - DAY }),
@@ -296,6 +308,48 @@ describe("confidence", () => {
     expect(computeConfidence(rich, txsRich)).toBeGreaterThan(
       computeConfidence(sparse, txsSparse),
     );
+  });
+});
+
+describe("history window cap", () => {
+  const base: AddressSummary = {
+    address: SELF,
+    firstSeenMs: NOW - 170 * DAY,
+    lastSeenMs: NOW,
+    txCount: 100,
+    balance: "1",
+    balanceSymbol: "OKB",
+    isFresh: false,
+    historyWindowDays: 183,
+    historyWindowCapped: false,
+  };
+  const txs = Array.from({ length: 100 }, (_, i) =>
+    tx({
+      from: SELF,
+      to: `0x${(i + 2).toString(16).padStart(40, "0")}`,
+      timestampMs: NOW - i * DAY,
+    }),
+  );
+
+  it("reduces confidence when the window is saturated", () => {
+    const capped = computeConfidence({ ...base, historyWindowCapped: true }, txs);
+    const uncapped = computeConfidence(base, txs);
+    expect(capped).toBeLessThan(uncapped);
+  });
+
+  it("notes the window in the explanation when capped", () => {
+    const result = computeAgentDna(
+      SELF,
+      { ...base, historyWindowCapped: true },
+      txs,
+      NOW,
+    );
+    expect(result.explanation.toLowerCase()).toContain("six months");
+  });
+
+  it("does not note the window when uncapped", () => {
+    const result = computeAgentDna(SELF, base, txs, NOW);
+    expect(result.explanation.toLowerCase()).not.toContain("six months");
   });
 });
 

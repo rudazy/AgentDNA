@@ -2,15 +2,16 @@
  * HTTP-free scan orchestration. Callable from paid routes and the playground.
  */
 
-import { computeAgentDna } from "./dna";
 import {
+  ChainDataError,
   getAddressSummary,
   getAddressTransactions,
   getTokenHolders,
   getTokenInfo,
-  getTokenTransfers,
-  OklinkError,
-} from "./oklink";
+  getTokenTrades,
+  HISTORY_WINDOW_DAYS,
+} from "./chaindata";
+import { computeAgentDna } from "./dna";
 import { computeTokenScan } from "./tokenscan";
 import type { AgentScanResponse, TokenScanResponse } from "./types";
 
@@ -28,8 +29,8 @@ export class ScanServiceError extends Error {
   }
 }
 
-function mapOklinkError(err: OklinkError): ScanServiceError {
-  if (err.kind === "Config") {
+function mapChainDataError(err: ChainDataError): ScanServiceError {
+  if (err.kind === "AuthFailed") {
     return new ScanServiceError("Chain data unavailable", 503, "CONFIG", err.message);
   }
   if (err.kind === "RateLimited") {
@@ -38,7 +39,7 @@ function mapOklinkError(err: OklinkError): ScanServiceError {
   if (err.kind === "NotFound") {
     return new ScanServiceError("Not found", 404, "NOT_FOUND", err.message);
   }
-  return new ScanServiceError("Upstream explorer error", 502, "UPSTREAM", err.message);
+  return new ScanServiceError("Upstream chain data error", 502, "UPSTREAM", err.message);
 }
 
 /** Run Agent Scan scoring from an X Layer address. */
@@ -65,7 +66,7 @@ export async function runAgentScan(
 
     return computeAgentDna(address, summary, txs);
   } catch (err) {
-    if (err instanceof OklinkError) {
+    if (err instanceof ChainDataError) {
       if (err.kind === "NotFound") {
         return computeAgentDna(
           address,
@@ -77,11 +78,13 @@ export async function runAgentScan(
             balance: "0",
             balanceSymbol: "OKB",
             isFresh: true,
+            historyWindowDays: HISTORY_WINDOW_DAYS,
+            historyWindowCapped: false,
           },
           [],
         );
       }
-      throw mapOklinkError(err);
+      throw mapChainDataError(err);
     }
     throw err;
   }
@@ -92,21 +95,21 @@ export async function runTokenScan(
   address: `0x${string}`,
 ): Promise<TokenScanResponse> {
   try {
-    const [info, holdersPage, transfersPage] = await Promise.all([
+    const [info, holdersPage, tradesPage] = await Promise.all([
       getTokenInfo(address),
       getTokenHolders(address, { page: 1, limit: 20 }),
-      getTokenTransfers(address, { page: 1, limit: 100 }),
+      getTokenTrades(address, { page: 1, limit: 100 }),
     ]);
 
     return computeTokenScan(
       address,
       info,
       holdersPage.holders,
-      transfersPage.transfers,
+      tradesPage.trades,
     );
   } catch (err) {
-    if (err instanceof OklinkError) {
-      throw mapOklinkError(err);
+    if (err instanceof ChainDataError) {
+      throw mapChainDataError(err);
     }
     throw err;
   }

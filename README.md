@@ -15,7 +15,7 @@ Callers are other AI agents paying per call via x402 (OKX Payment SDK). Stateles
 
 ```bash
 cp .env.example .env.local
-# set OKLINK_API_KEY and DEMO_MODE=true for local playground
+# set OKXOS_API_KEY, OKXOS_SECRET_KEY, OKXOS_PASSPHRASE, DEMO_MODE=true
 npm install
 npm run dev
 ```
@@ -37,7 +37,7 @@ Open http://localhost:3000
 ```
 app/           Landing page, playground, API routes
 components/    Radar SVG, playground UI
-lib/           oklink, dna, tokenscan, payment, types
+lib/           chaindata, dna, tokenscan, payment, types
 docs/          listing, pricing, demo script
 tasks/         todo, notes, lessons
 public/        llms.txt

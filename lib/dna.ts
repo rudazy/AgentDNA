@@ -283,7 +283,11 @@ export function scoreToGrade(score: number): Grade {
 
 /**
  * Confidence 0-100 from data volume. Fresh wallet gets low confidence, not a fake grade.
+ * When the data source history window is saturated (history likely extends past
+ * what is visible), the evidence is truncated and confidence is reduced.
  */
+export const WINDOW_CAPPED_CONFIDENCE_FACTOR = 0.85;
+
 export function computeConfidence(
   summary: AddressSummary,
   txs: NormalizedTx[],
@@ -302,7 +306,11 @@ export function computeConfidence(
       : 0;
   const spanBonus = clamp(Math.log10(1 + spanDays) * 8, 0, 15);
 
-  return roundTrait(volume + spanBonus);
+  const raw = volume + spanBonus;
+  const factor = summary.historyWindowCapped
+    ? WINDOW_CAPPED_CONFIDENCE_FACTOR
+    : 1;
+  return roundTrait(raw * factor);
 }
 
 /**
@@ -343,6 +351,7 @@ export function buildExplanation(
   confidence: number,
   deliveryProbability: number,
   isFresh: boolean,
+  historyWindowCapped = false,
 ): string {
   if (isFresh || confidence <= 10) {
     return [
@@ -390,7 +399,13 @@ export function buildExplanation(
     `Delivery probability is ${deliveryProbability}/100 (heuristic estimate from reliability, consistency, and longevity).`,
   );
 
-  return sentences.slice(0, 4).join(" ");
+  const picked = sentences.slice(0, 4);
+  if (historyWindowCapped) {
+    picked.push(
+      "The data source only exposes about six months of history, so longevity reflects observed activity and confidence is reduced.",
+    );
+  }
+  return picked.join(" ");
 }
 
 /** Full agent DNA scan from already-fetched data. */
@@ -411,6 +426,7 @@ export function computeAgentDna(
     confidence,
     deliveryProbability,
     summary.isFresh,
+    summary.historyWindowCapped,
   );
 
   return {

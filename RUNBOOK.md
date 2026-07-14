@@ -14,10 +14,14 @@ copy .env.example .env.local
 3. Set at minimum for local UI + free playground:
 
 ```
-OKLINK_API_KEY=your_key
+OKXOS_API_KEY=your_key
+OKXOS_SECRET_KEY=your_secret
+OKXOS_PASSPHRASE=your_passphrase
 DEMO_MODE=true
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
+
+Keys come from the OKX OS developer portal at web3.okx.com/build/dev-portal: Connect Wallet, verify with a signature, link email and phone, create a project, then create an API key with a passphrase. The secret key is shown under View details. Legacy `OKLINK_*` names in an existing `.env.local` keep working as fallbacks.
 
 4. Install and run:
 
@@ -39,11 +43,23 @@ npm run typecheck
 - Playground on `/` calls `POST /api/playground/scan` (free, same-origin, 10/hour)
 - With `DEMO_MODE=true`, paid routes also run without payment proof
 
+7. Chain data smoke (live OKX OS call with your credentials):
+
+```bash
+npx tsx scripts/smoke-chaindata.ts
+npx tsx scripts/smoke-chaindata.ts 0xSomeAddress 0xSomeToken
+```
+
+Defaults to the USDT0 contract on X Layer for both address and token. Prints the normalized address summary, recent transactions, token info, top holders, and recent trades, then `SMOKE OK`. If your local resolver blocks okx.com domains (some ISPs do), run it behind a VPN or DNS override; Vercel is unaffected.
+
 ## Environment variables
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `OKLINK_API_KEY` | Yes for live data | OKLink explorer API |
+| `OKXOS_API_KEY` | Yes for live data | OKX OS Web3 API key (dev portal project) |
+| `OKXOS_SECRET_KEY` | Yes for live data | HMAC secret for OK-ACCESS-SIGN |
+| `OKXOS_PASSPHRASE` | Yes for live data | API key passphrase |
+| `OKLINK_*` | Legacy alias | Old names for the three vars above; still read as fallbacks |
 | `DEMO_MODE` | Local only | `true` bypasses x402 on `/api/scan/*`. Production paid ASP: `false` or unset |
 | `OKX_API_KEY` | Production paid | OKX SA API key (x402 facilitator) |
 | `OKX_SECRET_KEY` | Production paid | HMAC secret |
@@ -71,7 +87,9 @@ npm run typecheck
 3. Production environment variables:
 
 ```
-OKLINK_API_KEY=...
+OKXOS_API_KEY=...
+OKXOS_SECRET_KEY=...
+OKXOS_PASSPHRASE=...
 DEMO_MODE=false
 OKX_API_KEY=...
 OKX_SECRET_KEY=...
@@ -113,13 +131,13 @@ Confirm status 402 and challenge body includes `accepts[0].price` = `$0.05`, `ne
 3. Confirm settlement on chain:
 
 - Check the `X402_PAYTO_ADDRESS` wallet on X Layer for a USDT0 credit of 0.05 (agent) or 0.01 (token).
-- Explorer: https://www.oklink.com/x-layer
+- Explorer: https://web3.okx.com/explorer/x-layer
 
 4. Token route: same flow with `POST /api/scan/token` at `$0.01`.
 
 ## Remaining manual steps for Ludarep
 
-1. Get OKLink API key and set `OKLINK_API_KEY` on Vercel.
+1. Create OKX Onchain OS project keys and set `OKXOS_API_KEY`, `OKXOS_SECRET_KEY`, `OKXOS_PASSPHRASE` on Vercel.
 2. Get OKX SA seller credentials and set `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE`, `X402_PAYTO_ADDRESS`.
 3. Deploy with `DEMO_MODE=false` for the public paid ASP endpoint.
 4. Register + list A2MCP using `docs/listing.md` via Onchain OS.
@@ -137,7 +155,9 @@ rg "[\x{1F300}-\x{1FAFF}]" --glob "!node_modules/**" --glob "!.next/**"
 
 | Symptom | Check |
 | --- | --- |
-| 503 chain data | `OKLINK_API_KEY` missing or invalid |
+| 503 chain data | Missing/invalid `OKXOS_API_KEY`, `OKXOS_SECRET_KEY`, or `OKXOS_PASSPHRASE`; or sign mismatch |
+| 429 with quota message | OKX OS Basic/Premium monthly free quota (100K calls each) exhausted; top up or subscribe in the dev portal |
+| Local ENOTFOUND web3.okx.com | Some resolvers block okx.com domains; use VPN or DNS override. Vercel is unaffected |
 | 402 always on paid routes | Expected without payment when DEMO_MODE off; check credentials + `X402_PAYTO_ADDRESS` |
 | Playground 403 | Must call from browser same origin (Origin/Referer host match) |
 | Playground 429 | 10 free scans per hour per IP (in-memory per isolate) |
