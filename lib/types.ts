@@ -16,6 +16,9 @@ export type Grade =
   | "D"
   | "F";
 
+/** Grade as displayed: a letter, or UNRATED when confidence is too low to rate. */
+export type DisplayGrade = Grade | "UNRATED";
+
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export interface AgentTraits {
@@ -31,7 +34,7 @@ export interface AgentScanResponse {
   service: typeof SERVICE_NAME;
   scan: "agent";
   address: string;
-  grade: Grade;
+  grade: DisplayGrade;
   traits: AgentTraits;
   deliveryProbability: number;
   /** Explicit label: deliveryProbability is a heuristic estimate, not a guarantee. */

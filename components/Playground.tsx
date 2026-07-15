@@ -166,9 +166,15 @@ export function Playground() {
                     <p className="text-[11px] uppercase tracking-[0.18em] text-muted">
                       Grade
                     </p>
-                    <p className="gold-number mt-1 text-5xl font-medium tracking-wideish sm:text-6xl md:text-7xl">
-                      {agentResult.grade}
-                    </p>
+                    {agentResult.grade === "UNRATED" ? (
+                      <p className="mt-1 text-2xl font-medium tracking-[0.18em] text-muted sm:text-3xl md:text-4xl">
+                        UNRATED
+                      </p>
+                    ) : (
+                      <p className="gold-number mt-1 text-5xl font-medium tracking-wideish sm:text-6xl md:text-7xl">
+                        {agentResult.grade}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.18em] text-muted">

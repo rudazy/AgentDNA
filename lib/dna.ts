@@ -7,19 +7,24 @@ import type {
   AddressSummary,
   AgentScanResponse,
   AgentTraits,
+  DisplayGrade,
   Grade,
   NormalizedTx,
 } from "./types";
 import { SERVICE_NAME, SERVICE_VERSION } from "./types";
 
-/** Tunable grade blend weights (must sum to 1). */
+/**
+ * Tunable grade blend weights (must sum to 1).
+ * The delivery traits (reliability, consistency, longevity) carry most of the
+ * weight so the letter grade cannot drift far from deliveryProbability.
+ */
 export const TRAIT_WEIGHTS = {
-  reliability: 0.25,
-  consistency: 0.18,
+  reliability: 0.3,
+  consistency: 0.2,
   longevity: 0.15,
-  riskAppetite: 0.08,
-  activity: 0.17,
-  counterpartyDiversity: 0.17,
+  riskAppetite: 0.05,
+  activity: 0.15,
+  counterpartyDiversity: 0.15,
 } as const;
 
 /** Delivery probability blend (heuristic). */
@@ -118,8 +123,41 @@ export function scoreConsistency(txs: NormalizedTx[]): number {
 }
 
 /**
+ * The data source summary has no since-genesis first-seen. When the summary
+ * lacks firstSeenMs but transactions were fetched, derive first and last seen
+ * from the transaction timestamps so real history never scores longevity 0.
+ * An address with visible transactions is by definition not fresh.
+ */
+export function withDerivedFirstSeen(
+  summary: AddressSummary,
+  txs: NormalizedTx[],
+): AddressSummary {
+  if (txs.length === 0) return summary;
+  const times = txs.map((t) => t.timestampMs).filter((t) => t > 0);
+  if (times.length === 0) return summary;
+
+  const oldest = Math.min(...times);
+  const newest = Math.max(...times);
+  return {
+    ...summary,
+    firstSeenMs:
+      summary.firstSeenMs === null
+        ? oldest
+        : Math.min(summary.firstSeenMs, oldest),
+    lastSeenMs:
+      summary.lastSeenMs === null
+        ? newest
+        : Math.max(summary.lastSeenMs, newest),
+    isFresh: false,
+  };
+}
+
+/**
  * Longevity: wallet age, log scaled so 2y is not 100x a 1 week wallet.
  * log10(1 + ageDays) scaled so ~2 years approaches high scores.
+ * A history window (183 days on this data source) caps observed age, so the
+ * score tops out near 71 for window-limited addresses. The window is a
+ * ceiling on the score, never a reason to zero out real history.
  */
 export function scoreLongevity(
   summary: AddressSummary,
@@ -239,12 +277,13 @@ export function computeTraits(
   txs: NormalizedTx[],
   nowMs = Date.now(),
 ): AgentTraits {
+  const effective = withDerivedFirstSeen(summary, txs);
   return {
     reliability: scoreReliability(txs, nowMs),
     consistency: scoreConsistency(txs),
-    longevity: scoreLongevity(summary, nowMs),
+    longevity: scoreLongevity(effective, nowMs),
     riskAppetite: scoreRiskAppetite(txs),
-    activity: scoreActivity(summary, txs, nowMs),
+    activity: scoreActivity(effective, txs, nowMs),
     counterpartyDiversity: scoreCounterpartyDiversity(address, txs),
   };
 }
@@ -266,20 +305,43 @@ export function computeOverallScore(traits: AgentTraits): number {
   return clamp(blended);
 }
 
+/**
+ * Grade bands calibrated to the reachable blend range. With a 6 month history
+ * window, longevity tops out near 71, so a flawless window-limited profile
+ * blends to roughly 95; A+ sits at that ceiling instead of an unreachable 97.
+ */
 export function scoreToGrade(score: number): Grade {
   const s = clamp(score);
-  if (s >= 97) return "A+";
-  if (s >= 93) return "A";
-  if (s >= 90) return "A-";
-  if (s >= 87) return "B+";
-  if (s >= 83) return "B";
-  if (s >= 80) return "B-";
-  if (s >= 77) return "C+";
-  if (s >= 73) return "C";
-  if (s >= 70) return "C-";
-  if (s >= 60) return "D";
+  if (s >= 95) return "A+";
+  if (s >= 90) return "A";
+  if (s >= 85) return "A-";
+  if (s >= 79) return "B+";
+  if (s >= 73) return "B";
+  if (s >= 67) return "B-";
+  if (s >= 60) return "C+";
+  if (s >= 53) return "C";
+  if (s >= 45) return "C-";
+  if (s >= 30) return "D";
   return "F";
 }
+
+/**
+ * Coherence guard: the grade score may trail deliveryProbability by at most
+ * this many points. deliveryProbability 60 floors the grade score at 45, the
+ * C- band minimum, so a profile estimated to deliver at 60+ can never read
+ * as a failing hire while the delivery number says otherwise.
+ */
+export const GRADE_DELIVERY_MAX_LAG = 15;
+
+/** Score the letter grade is derived from: trait blend with the coherence floor. */
+export function computeGradeScore(traits: AgentTraits): number {
+  const blended = computeOverallScore(traits);
+  const floor = computeDeliveryProbability(traits) - GRADE_DELIVERY_MAX_LAG;
+  return clamp(Math.max(blended, floor));
+}
+
+/** Below this confidence, no letter grade is shown; the profile is UNRATED. */
+export const UNRATED_CONFIDENCE_THRESHOLD = 15;
 
 /**
  * Confidence 0-100 from data volume. Fresh wallet gets low confidence, not a fake grade.
@@ -347,13 +409,13 @@ function rankedTraits(traits: AgentTraits): { key: TraitKey; value: number }[] {
  */
 export function buildExplanation(
   traits: AgentTraits,
-  grade: Grade,
+  grade: DisplayGrade,
   confidence: number,
   deliveryProbability: number,
   isFresh: boolean,
   historyWindowCapped = false,
 ): string {
-  if (isFresh || confidence <= 10) {
+  if (isFresh || confidence < UNRATED_CONFIDENCE_THRESHOLD) {
     return [
       "This address has little or no onchain history on X Layer, so confidence is low.",
       "Grades and delivery estimates on fresh wallets are not reliable hiring signals.",
@@ -415,18 +477,21 @@ export function computeAgentDna(
   txs: NormalizedTx[],
   nowMs = Date.now(),
 ): AgentScanResponse {
-  const traits = computeTraits(address, summary, txs, nowMs);
-  const overall = computeOverallScore(traits);
-  const grade = scoreToGrade(overall);
-  const confidence = computeConfidence(summary, txs);
+  const effective = withDerivedFirstSeen(summary, txs);
+  const traits = computeTraits(address, effective, txs, nowMs);
+  const confidence = computeConfidence(effective, txs);
+  const grade: DisplayGrade =
+    confidence < UNRATED_CONFIDENCE_THRESHOLD
+      ? "UNRATED"
+      : scoreToGrade(computeGradeScore(traits));
   const deliveryProbability = computeDeliveryProbability(traits);
   const explanation = buildExplanation(
     traits,
     grade,
     confidence,
     deliveryProbability,
-    summary.isFresh,
-    summary.historyWindowCapped,
+    effective.isFresh,
+    effective.historyWindowCapped,
   );
 
   return {

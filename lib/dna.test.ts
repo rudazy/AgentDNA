@@ -4,6 +4,7 @@ import {
   computeAgentDna,
   computeConfidence,
   computeDeliveryProbability,
+  computeGradeScore,
   computeOverallScore,
   scoreConsistency,
   scoreCounterpartyDiversity,
@@ -12,6 +13,8 @@ import {
   scoreRiskAppetite,
   scoreToGrade,
   TRAIT_WEIGHTS,
+  UNRATED_CONFIDENCE_THRESHOLD,
+  withDerivedFirstSeen,
 } from "./dna";
 import type { AddressSummary, NormalizedTx } from "./types";
 
@@ -67,9 +70,10 @@ describe("fresh wallet (zero txs)", () => {
     expect(scoreLongevity(summary, NOW)).toBe(0);
   });
 
-  it("returns low confidence and grade F path with honest explanation", () => {
+  it("returns low confidence, UNRATED grade, and honest explanation", () => {
     const result = computeAgentDna(SELF, summary, [], NOW);
     expect(result.confidence).toBeLessThanOrEqual(10);
+    expect(result.grade).toBe("UNRATED");
     expect(result.traits.reliability).toBe(0);
     expect(result.traits.activity).toBe(0);
     expect(result.explanation.toLowerCase()).toContain("little or no onchain history");
@@ -237,10 +241,18 @@ describe("risk appetite", () => {
 });
 
 describe("grade and delivery", () => {
-  it("maps high scores to A-range grades", () => {
-    expect(scoreToGrade(98)).toBe("A+");
-    expect(scoreToGrade(50)).toBe("F");
-    expect(scoreToGrade(85)).toBe("B");
+  it("maps scores to the calibrated bands", () => {
+    expect(scoreToGrade(96)).toBe("A+");
+    expect(scoreToGrade(91)).toBe("A");
+    expect(scoreToGrade(86)).toBe("A-");
+    expect(scoreToGrade(80)).toBe("B+");
+    expect(scoreToGrade(74)).toBe("B");
+    expect(scoreToGrade(68)).toBe("B-");
+    expect(scoreToGrade(61)).toBe("C+");
+    expect(scoreToGrade(54)).toBe("C");
+    expect(scoreToGrade(45)).toBe("C-");
+    expect(scoreToGrade(35)).toBe("D");
+    expect(scoreToGrade(20)).toBe("F");
   });
 
   it("delivery probability is a blend of three traits", () => {
@@ -267,6 +279,157 @@ describe("grade and delivery", () => {
       counterpartyDiversity: 100,
     };
     expect(computeOverallScore(traits)).toBeGreaterThan(95);
+  });
+});
+
+describe("longevity fallback when the summary lacks first-seen", () => {
+  const summaryWithoutFirstSeen: AddressSummary = {
+    address: SELF,
+    firstSeenMs: null,
+    lastSeenMs: null,
+    txCount: 0,
+    balance: "0",
+    balanceSymbol: "OKB",
+    isFresh: true,
+    historyWindowDays: 183,
+    historyWindowCapped: false,
+  };
+
+  it("derives first and last seen from fetched transactions", () => {
+    const txs = [
+      tx({ from: SELF, to: "0x2", timestampMs: NOW - 90 * DAY }),
+      tx({ from: SELF, to: "0x3", timestampMs: NOW - DAY }),
+    ];
+    const derived = withDerivedFirstSeen(summaryWithoutFirstSeen, txs);
+    expect(derived.firstSeenMs).toBe(NOW - 90 * DAY);
+    expect(derived.lastSeenMs).toBe(NOW - DAY);
+    expect(derived.isFresh).toBe(false);
+  });
+
+  it("scores 3 months of steady activity meaningfully above zero", () => {
+    const txs: NormalizedTx[] = Array.from({ length: 90 }, (_, i) =>
+      tx({
+        from: SELF,
+        to: `0x${(i + 2).toString(16).padStart(40, "0")}`,
+        timestampMs: NOW - i * DAY,
+        status: "success",
+      }),
+    );
+    const result = computeAgentDna(SELF, summaryWithoutFirstSeen, txs, NOW);
+    expect(result.traits.longevity).toBeGreaterThan(40);
+    expect(result.grade).not.toBe("UNRATED");
+  });
+
+  it("leaves a truly empty summary untouched", () => {
+    const derived = withDerivedFirstSeen(summaryWithoutFirstSeen, []);
+    expect(derived).toEqual(summaryWithoutFirstSeen);
+    expect(scoreLongevity(derived, NOW)).toBe(0);
+  });
+});
+
+describe("longevity window ceiling", () => {
+  it("caps a window-saturated address near the documented ceiling, not zero", () => {
+    const summary: AddressSummary = {
+      address: SELF,
+      firstSeenMs: NOW - 183 * DAY,
+      lastSeenMs: NOW,
+      txCount: 100,
+      balance: "1",
+      balanceSymbol: "OKB",
+      isFresh: false,
+      historyWindowDays: 183,
+      historyWindowCapped: true,
+    };
+    const score = scoreLongevity(summary, NOW);
+    expect(score).toBeGreaterThanOrEqual(65);
+    expect(score).toBeLessThanOrEqual(75);
+  });
+});
+
+describe("grade coherence invariant", () => {
+  it("never grades below C- when deliveryProbability is 60 or higher", () => {
+    const steps = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    for (const reliability of steps) {
+      for (const consistency of steps) {
+        for (const longevity of steps) {
+          for (const riskAppetite of [0, 100]) {
+            const traits = {
+              reliability,
+              consistency,
+              longevity,
+              riskAppetite,
+              activity: 0,
+              counterpartyDiversity: 0,
+            };
+            const dp = computeDeliveryProbability(traits);
+            if (dp < 60) continue;
+            const grade = scoreToGrade(computeGradeScore(traits));
+            expect(grade, `dp ${dp} graded ${grade}`).not.toBe("F");
+            expect(grade, `dp ${dp} graded ${grade}`).not.toBe("D");
+          }
+        }
+      }
+    }
+  });
+
+  it("regression: reliability 100 with delivery 71 no longer grades F", () => {
+    const traits = {
+      reliability: 100,
+      consistency: 87,
+      longevity: 0,
+      riskAppetite: 80,
+      activity: 10,
+      counterpartyDiversity: 8,
+    };
+    const dp = computeDeliveryProbability(traits);
+    expect(dp).toBe(71);
+    const grade = scoreToGrade(computeGradeScore(traits));
+    expect(["C-", "C", "C+", "B-", "B", "B+", "A-", "A", "A+"]).toContain(grade);
+  });
+});
+
+describe("UNRATED state", () => {
+  it("shows UNRATED instead of a letter grade below the confidence threshold", () => {
+    const summary: AddressSummary = {
+      address: SELF,
+      firstSeenMs: NOW - DAY,
+      lastSeenMs: NOW - DAY,
+      txCount: 1,
+      balance: "0.5",
+      balanceSymbol: "OKB",
+      isFresh: false,
+      historyWindowDays: 183,
+      historyWindowCapped: false,
+    };
+    const txs = [tx({ from: SELF, to: "0x2", timestampMs: NOW - DAY })];
+    const result = computeAgentDna(SELF, summary, txs, NOW);
+    expect(result.confidence).toBeLessThan(UNRATED_CONFIDENCE_THRESHOLD);
+    expect(result.grade).toBe("UNRATED");
+    expect(result.explanation.toLowerCase()).toContain("confidence is low");
+  });
+
+  it("shows a letter grade at or above the confidence threshold", () => {
+    const summary: AddressSummary = {
+      address: SELF,
+      firstSeenMs: NOW - 60 * DAY,
+      lastSeenMs: NOW,
+      txCount: 60,
+      balance: "1",
+      balanceSymbol: "OKB",
+      isFresh: false,
+      historyWindowDays: 183,
+      historyWindowCapped: false,
+    };
+    const txs = Array.from({ length: 60 }, (_, i) =>
+      tx({
+        from: SELF,
+        to: `0x${(i + 2).toString(16).padStart(40, "0")}`,
+        timestampMs: NOW - i * DAY,
+      }),
+    );
+    const result = computeAgentDna(SELF, summary, txs, NOW);
+    expect(result.confidence).toBeGreaterThanOrEqual(UNRATED_CONFIDENCE_THRESHOLD);
+    expect(result.grade).not.toBe("UNRATED");
   });
 });
 

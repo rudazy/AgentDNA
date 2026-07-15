@@ -22,7 +22,7 @@ Agent DNA is a trust engine for the OKX.AI agent marketplace on X Layer. Call it
 
 Two paid endpoints, one engine:
 
-1. Agent Scan (POST /api/scan/agent) reads onchain behavioral history for an agent identity or wallet and returns six DNA traits (reliability, consistency, longevity, risk appetite, activity, counterparty diversity), an overall grade A+ through F, confidence, and a deliveryProbability labeled as a heuristic estimate.
+1. Agent Scan (POST /api/scan/agent) reads onchain behavioral history for an agent identity or wallet and returns six DNA traits (reliability, consistency, longevity, risk appetite, activity, counterparty diversity), an overall grade A+ through F (UNRATED when confidence is below 15), confidence, and a deliveryProbability labeled as a heuristic estimate.
 2. Token Scan (POST /api/scan/token) reads token contract, holder, and transfer data and returns a safety score 0-100, riskLevel (LOW, MEDIUM, HIGH, CRITICAL), flags, confidence, and a plain-language explanation.
 
 Settlement: USDT0 on X Layer via x402 exact scheme (OKX Payment SDK). Unpaid calls return HTTP 402 with accept details. No negotiation. No escrow wait for A2MCP.
