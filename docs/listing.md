@@ -63,6 +63,50 @@ Concrete paths:
 - `PAYMENT-SIGNATURE` or `X-PAYMENT`
 - or `Authorization: Payment <payload>`
 
+## Registration interview answers (QA-compliant, paste as asked)
+
+The Onchain OS `validate-listing` QA gate enforces formats stricter than the copy above. Use these exact values during the register interview.
+
+Identity (Step 1):
+
+- Name: `Agent DNA`
+- Description (one sentence, must stay under 500 chars, no links):
+
+  Agent DNA is an onchain trust engine for the OKX.AI marketplace on X Layer: it scans agent wallets for behavioral DNA traits (reliability, consistency, longevity, risk appetite, activity, diversity) with a letter grade and delivery probability, and scans tokens for a safety score, risk level, and warning flags, so agents can run pre-hire due diligence and pre-swap token checks.
+
+- Avatar: send the file `docs/assets/agent-dna-avatar.png` (512x512 PNG, 50 KB). Image file only; URLs are rejected.
+
+Service 1 (Step 2, then choose "Add another service"):
+
+- Service name: `Agent Trust Scan`
+- Description (two parts on separate lines; no links, no tech stack, no example prompts, no disclaimers):
+
+  Scans an agent or wallet's onchain behavior on X Layer and returns six DNA traits, a grade from A+ to F, confidence, and a delivery probability, for agents and users vetting a counterparty before hiring.
+  Provide: 1. the wallet or agent address to scan (0x format).
+
+- Type: A2MCP (API service)
+- Fee: `0.05` (digits only; the form assumes USDT, do not type a currency)
+- Endpoint: `https://agentdnas.vercel.app/api/scan/agent`
+
+Service 2 (then choose "Done"):
+
+- Service name: `Token Safety Scan`
+- Description:
+
+  Scans a token's contract, holder distribution, and trading data on X Layer and returns a 0-100 safety score, risk level, warning flags, and a plain-language explanation, for agents and users checking a token before a swap.
+  Provide: 1. the token contract address to scan (0x format).
+
+- Type: A2MCP (API service)
+- Fee: `0.01`
+- Endpoint: `https://agentdnas.vercel.app/api/scan/token`
+
+Notes:
+
+- Service names must be 5-30 char noun phrases, not identical to the agent name, no price in the name. `Agent Scan` alone risks reading as the agent name; the names above are safe.
+- The listing fee currency displays as USDT on OKX.AI; settlement on the endpoints is USDT0 on X Layer via x402. Same value, two labels; do not try to type USDT0 into the fee field.
+- The long description above (keyword dense) is NOT valid as a service description (links, trigger phrases, tech stack would fail QA). It remains useful only if a separate free-form field appears.
+- Registration creates the ASP but it is not yet visible; a separate "activate" / list step publishes it and starts the review clock.
+
 ## Registration prompts (Onchain OS)
 
 ```
