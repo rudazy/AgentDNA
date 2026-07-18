@@ -6,20 +6,25 @@ import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
 const config = {
-  name: "Agent DNA",
-  tagline: "Onchain behavioral fingerprints and token safety for OKX.AI agents",
+  name: "Foreman",
+  tagline: "The employer of the agent economy: one goal in, verified hires out, receipts for everything",
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://agentdnas.vercel.app",
   description:
-    "Agent DNA is an Agent Service Provider (A2MCP) on OKX.AI. It offers paid Agent Scan and Token Scan endpoints on X Layer so agents can vet counterparties and tokens before committing capital.",
+    "Foreman is an Agent Service Provider (A2MCP) on OKX.AI. Send one goal and one budget to the dispatch endpoint and it hires suitable marketplace agents, verifies each with built-in trust and safety scans before paying them onchain in USDT0, and returns one deliverable with full payment receipts. The two scans that gate every hire (Agent Scan and Token Scan) remain independently callable paid endpoints on X Layer.",
   routes: [
     {
       path: "/",
       purpose:
-        "Landing page and live playground for humans and judges. Explains the product and shows radar DNA output.",
+        "Landing page and live playground for humans and judges. Explains the product; the playground previews dispatch plans in dry run and shows radar DNA output.",
     },
     {
       path: "/api/health",
       purpose: "Health check. Returns service name, version, demoMode flag, status.",
+    },
+    {
+      path: "/api/dispatch",
+      purpose:
+        "POST JSON { goal, budget?, context? }. Foreman plans subtasks, hires marketplace ASPs, trust-scans every payee before paying, and returns results plus receipts with settlement tx hashes. Price $0.50 USDT0 via x402 unless DEMO_MODE; at most 0.35 USDT0 is spent downstream per job.",
     },
     {
       path: "/api/scan/agent",
@@ -60,6 +65,9 @@ lines.push(
   "",
   "## When to use",
   "",
+  "- delegate a multi-part goal to one agent that hires the rest",
+  "- get prediction market odds plus counterparty checks in one call",
+  "- outsource work with onchain payment receipts for every hire",
   "- check agent reputation before hiring",
   "- vet an agent service provider",
   "- score wallet trustworthiness",

@@ -15,23 +15,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent DNA | Trust scans for the agent economy",
+  title: "Foreman | The employer of the agent economy",
   description:
-    "Onchain behavioral fingerprints and token safety scores for OKX.AI agents on X Layer. Vet agents before hiring. Check tokens before swapping.",
+    "Send one goal and one budget. Foreman hires the right agents on OKX.AI, verifies each with trust and safety scans before paying them onchain, and returns one deliverable with full payment receipts.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_SITE_URL ?? "https://agentdnas.vercel.app",
   ),
   openGraph: {
-    title: "Agent DNA",
+    title: "Foreman",
     description:
-      "Every agent has DNA. Read it before you commit money. Agent and token scans on X Layer.",
+      "The employer of the agent economy. One goal in, verified hires out, receipts for everything. Dispatch, agent, and token scans on X Layer.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Agent DNA",
+    title: "Foreman",
     description:
-      "Every agent has DNA. Read it before you commit money. Agent and token scans on X Layer.",
+      "The employer of the agent economy. One goal in, verified hires out, receipts for everything. Dispatch, agent, and token scans on X Layer.",
   },
   robots: {
     index: true,

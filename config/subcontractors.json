@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-17",
+  "note": "Curated registry of live OKX.AI marketplace ASPs Foreman can hire. Refresh manually with: onchainos agent search --query <capability> --status active. Only A2MCP services with a public https endpoint are hireable. Prices are quoted USDT0 per call; the hirer refuses any challenge above the quote.",
+  "subcontractors": [
+    {
+      "id": "certik-security",
+      "agentId": "1965",
+      "agentName": "CertiK",
+      "serviceName": "CertiK Security APIs",
+      "capability": "security_check",
+      "endpoint": "https://skills-for-okx.certik.com/api/services",
+      "method": "POST",
+      "requestStyle": "goal-context",
+      "priceUsdt0": "0.001",
+      "payeeAddress": "0xFD417F307B76cAD8f62A36E26e30131126a4c199",
+      "notes": "Token scans, Skynet scores, EVM traces. Rating 100, sold 87, securityRate 5.0 as of 2026-07-17."
+    },
+    {
+      "id": "chainsentry-token-dd",
+      "agentId": "2361",
+      "agentName": "ChainSentry",
+      "serviceName": "Token DD Verdict",
+      "capability": "token_risk",
+      "endpoint": "https://verdict.gougoubi.uk/screen/verdict",
+      "method": "GET",
+      "requestStyle": "query-address-chain",
+      "supportedChains": ["ethereum", "bsc", "base", "solana"],
+      "priceUsdt0": "0.05",
+      "payeeAddress": "0x36B78E1Fd906D498a929B4C497E46c7c9D835339",
+      "notes": "BUY/CAUTION/BLOCK verdict via query params address and chain. Does not cover X Layer; used only when the caller names a supported chain. Rating 100 as of 2026-07-17."
+    },
+    {
+      "id": "prex-market-analysis",
+      "agentId": "5136",
+      "agentName": "Prex",
+      "serviceName": "Market analysis",
+      "capability": "prediction_market",
+      "endpoint": "https://prex.best/api/okx-ai/market-analysis",
+      "method": "POST",
+      "requestStyle": "goal-context",
+      "priceUsdt0": "0.01",
+      "payeeAddress": "0xCf3B07Eb8C4910D83F8279ca19e0495eab2AC4D4",
+      "notes": "Direction, confidence, and key levels for one asset. Rating 89 as of 2026-07-17."
+    },
+    {
+      "id": "prediction-market-eye",
+      "agentId": "2100",
+      "agentName": "Prediction Market Eye",
+      "serviceName": "Prediction market brief",
+      "capability": "prediction_market",
+      "endpoint": "https://okxai.hopea9.top/agent/prediction-market-brief",
+      "method": "POST",
+      "requestStyle": "goal-context",
+      "priceUsdt0": "0.2",
+      "payeeAddress": "0x54218A4D53D9815FD65E0B2b04eC71EC503C3A1b",
+      "notes": "Polymarket and Kalshi odds analysis. Price exceeds the default MAX_SPEND_PER_SUBCALL of 0.10, so it is only hired when the cap is raised; the planner otherwise prefers prex-market-analysis."
+    }
+  ]
+}

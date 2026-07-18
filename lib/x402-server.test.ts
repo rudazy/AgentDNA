@@ -28,4 +28,15 @@ describe("buildUnpaidChallengeBody", () => {
     expect(body.accepts[0]!.scheme).toBe("exact");
     expect(body.details.toLowerCase()).toContain("token");
   });
+
+  it("shapes dispatch 402 challenge with $0.50 on the same rails", () => {
+    const body = buildUnpaidChallengeBody("dispatch", "0xPayToAddress");
+    expect(body.code).toBe("PAYMENT_REQUIRED");
+    expect(body.accepts[0]!.price).toBe(PRICES.dispatch);
+    expect(body.accepts[0]!.price).toBe("$0.50");
+    expect(body.accepts[0]!.scheme).toBe("exact");
+    expect(body.accepts[0]!.network).toBe("eip155:196");
+    expect(body.accepts[0]!.asset).toBe(USDT0_ADDRESS);
+    expect(body.details.toLowerCase()).toContain("dispatch");
+  });
 });

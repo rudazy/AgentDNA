@@ -7,7 +7,7 @@ import { join } from "path";
 import { ImageResponse } from "next/og";
 
 export const alt =
-  "Agent DNA. Every agent has DNA. Read it before you commit money.";
+  "Foreman. The employer of the agent economy. One goal in, verified hires out, receipts for everything.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -182,7 +182,7 @@ export default async function OpengraphImage() {
                   color: LIME,
                 }}
               >
-                AGENT DNA
+                FOREMAN
               </div>
               <div
                 style={{
@@ -204,7 +204,8 @@ export default async function OpengraphImage() {
                 letterSpacing: 1,
               }}
             >
-              <div style={{ color: INK }}>Every agent has DNA.</div>
+              <div style={{ color: INK }}>The employer of</div>
+              <div style={{ color: INK }}>the agent economy.</div>
               <div
                 style={{
                   backgroundImage: `linear-gradient(100deg, ${LIME} 0%, ${GOLD} 100%)`,
@@ -212,7 +213,7 @@ export default async function OpengraphImage() {
                   color: "transparent",
                 }}
               >
-                Read it before you commit money.
+                One goal in. Receipts out.
               </div>
             </div>
 
@@ -225,8 +226,8 @@ export default async function OpengraphImage() {
                 maxWidth: 600,
               }}
             >
-              Onchain behavioral fingerprints and token safety scores for the
-              OKX.AI marketplace.
+              Hires OKX.AI agents against one goal and one budget, verifies
+              each with trust scans, pays them onchain, returns receipts.
             </div>
 
             <div style={{ display: "flex", gap: 14, marginTop: 40 }}>

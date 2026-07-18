@@ -4,7 +4,7 @@
 
 import { PRICES, USDT0_ADDRESS, X_LAYER_NETWORK } from "./constants";
 
-export type ScanKind = "agent" | "token";
+export type ScanKind = "agent" | "token" | "dispatch";
 
 /**
  * Unpaid 402 JSON body shape for Agent DNA paid routes.
@@ -29,11 +29,12 @@ export function buildUnpaidChallengeBody(
   }>;
   headersHint: string[];
 } {
-  const price = scan === "agent" ? PRICES.agent : PRICES.token;
+  const price = priceForScan(scan);
+  const label = scan === "dispatch" ? "dispatch job" : `${scan} scan`;
   return {
     error: "Payment required",
     code: "PAYMENT_REQUIRED",
-    details: `This ${scan} scan costs ${price} USDT0 on X Layer (x402 exact scheme). Sign payment and retry with PAYMENT-SIGNATURE or X-PAYMENT.`,
+    details: `This ${label} costs ${price} USDT0 on X Layer (x402 exact scheme). Sign payment and retry with PAYMENT-SIGNATURE or X-PAYMENT.`,
     x402Version: 2,
     accepts: [
       {
@@ -54,5 +55,7 @@ export function buildUnpaidChallengeBody(
 }
 
 export function priceForScan(scan: ScanKind): string {
-  return scan === "agent" ? PRICES.agent : PRICES.token;
+  if (scan === "agent") return PRICES.agent;
+  if (scan === "token") return PRICES.token;
+  return PRICES.dispatch;
 }

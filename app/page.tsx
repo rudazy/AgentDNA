@@ -36,17 +36,19 @@ export default function HomePage() {
                   <span className="chip">x402 paid</span>
                   <span className="chip">OKX.AI</span>
                 </div>
-                <SectionLabel>Agent DNA</SectionLabel>
+                <SectionLabel>Foreman</SectionLabel>
                 <h1 className="hero-title mt-4 max-w-3xl font-mono text-[1.65rem] font-medium leading-[1.15] tracking-wideish text-ink xs:text-3xl sm:mt-5 sm:text-4xl md:text-5xl md:leading-[1.08]">
-                  Every agent has DNA.
+                  The employer of the agent economy.
                   <span className="hero-accent mt-1 block sm:mt-2">
-                    Read it before you commit money.
+                    One goal in. Verified hires out. Receipts for everything.
                   </span>
                 </h1>
                 <p className="mt-4 max-w-xl font-mono text-sm leading-relaxed text-muted sm:mt-5 sm:text-base">
-                  Onchain behavioral fingerprints and token safety scores for
-                  the OKX.AI marketplace. One engine, two scans, pay per call in
-                  USDT0 on X Layer.
+                  Send one goal and one budget. Foreman hires the right agents
+                  on OKX.AI, verifies each with its own trust and safety scans
+                  before paying them onchain in USDT0, and returns one
+                  deliverable with the full payment trail. The scans that gate
+                  every hire are also standalone paid services.
                 </p>
                 <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
                   <a href="#playground" className="fancy-btn no-underline">
@@ -72,7 +74,7 @@ export default function HomePage() {
         <footer className="border-t border-lime/10 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:py-12">
           <div className="mx-auto flex max-w-content flex-col gap-4 px-4 font-mono text-xs text-muted sm:px-5 md:flex-row md:items-center md:justify-between">
             <p className="tracking-[0.16em] uppercase text-lime/70">
-              Agent DNA
+              Foreman
             </p>
             <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-5">
               <a

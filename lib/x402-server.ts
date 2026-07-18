@@ -67,7 +67,9 @@ export function buildRouteConfig(scan: ScanKind): RouteConfig {
     description:
       scan === "agent"
         ? "Agent DNA Agent Scan on X Layer"
-        : "Agent DNA Token Scan on X Layer",
+        : scan === "token"
+          ? "Agent DNA Token Scan on X Layer"
+          : "Foreman Dispatch on X Layer",
     mimeType: "application/json",
     unpaidResponseBody: () => ({
       contentType: "application/json",

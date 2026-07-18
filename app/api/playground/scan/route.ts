@@ -8,6 +8,12 @@ import {
   PLAYGROUND_WINDOW_MS,
 } from "@/lib/ratelimit";
 import {
+  ForemanError,
+  forcedDryRunDeps,
+  runDispatch,
+  type DispatchContext,
+} from "@/lib/foreman";
+import {
   runAgentScan,
   runTokenScan,
   ScanServiceError,
@@ -27,6 +33,22 @@ export const maxDuration = 30;
 
 function errorJson(status: number, body: ErrorBody, extraHeaders?: HeadersInit) {
   return NextResponse.json(body, { status, headers: extraHeaders });
+}
+
+function parsePlaygroundContext(raw: unknown): DispatchContext {
+  if (typeof raw !== "object" || raw === null) return {};
+  const r = raw as Record<string, unknown>;
+  return {
+    addresses: Array.isArray(r.addresses)
+      ? r.addresses.filter((a): a is string => typeof a === "string")
+      : undefined,
+    tokenAddress: typeof r.tokenAddress === "string" ? r.tokenAddress : undefined,
+    agentAddress: typeof r.agentAddress === "string" ? r.agentAddress : undefined,
+    contractAddress:
+      typeof r.contractAddress === "string" ? r.contractAddress : undefined,
+    marketId: typeof r.marketId === "string" ? r.marketId : undefined,
+    chain: typeof r.chain === "string" ? r.chain : undefined,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -78,15 +100,61 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const record = body as { address?: unknown; scan?: unknown };
+  const record = body as {
+    address?: unknown;
+    scan?: unknown;
+    goal?: unknown;
+    budget?: unknown;
+    context?: unknown;
+  };
   const scanRaw = record.scan;
-  if (scanRaw !== "agent" && scanRaw !== "token") {
+  if (scanRaw !== "agent" && scanRaw !== "token" && scanRaw !== "dispatch") {
     return errorJson(400, {
       error: "Invalid scan type",
       code: "BAD_REQUEST",
-      details: 'scan must be "agent" or "token"',
+      details: 'scan must be "agent", "token", or "dispatch"',
     });
   }
+
+  if (scanRaw === "dispatch") {
+    // Free preview always runs the dispatcher in forced dry run: outbound
+    // hires are mocked server-side so the playground can never spend real
+    // float, regardless of FOREMAN_DRY_RUN.
+    try {
+      const result = await runDispatch(
+        {
+          goal: typeof record.goal === "string" ? record.goal : "",
+          budget: typeof record.budget === "number" ? record.budget : undefined,
+          context: parsePlaygroundContext(record.context),
+        },
+        forcedDryRunDeps(),
+      );
+      return NextResponse.json(
+        { ...result, playground: true as const },
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            "X-RateLimit-Remaining": String(rl.remaining),
+          },
+        },
+      );
+    } catch (err) {
+      if (err instanceof ForemanError) {
+        return errorJson(err.status, {
+          error: err.message,
+          code: "BAD_REQUEST",
+          details: err.details ? err.details.join(" ") : undefined,
+        });
+      }
+      console.error("[playground-dispatch]", err);
+      return errorJson(500, {
+        error: "Internal error",
+        code: "INTERNAL",
+        details: "Playground dispatch failed unexpectedly",
+      });
+    }
+  }
+
   const scan = scanRaw as ScanKind;
 
   const validated = validateAddress(record.address);

@@ -4,6 +4,11 @@ import { useState } from "react";
 import { PRICES } from "@/lib/constants";
 import { CornerOrnaments, SectionLabel } from "./Ornament";
 
+const DISPATCH_EXAMPLE = `curl -X POST https://agentdnas.vercel.app/api/dispatch \\
+  -H "Content-Type: application/json" \\
+  -H "PAYMENT-SIGNATURE: <x402-proof>" \\
+  -d '{"goal":"polymarket odds on the fed cutting rates, and due diligence on agent 0x...","budget":0.35}'`;
+
 const AGENT_EXAMPLE = `curl -X POST https://agentdnas.vercel.app/api/scan/agent \\
   -H "Content-Type: application/json" \\
   -H "PAYMENT-SIGNATURE: <x402-proof>" \\
@@ -66,10 +71,37 @@ export function HowAgentsCall() {
             </h2>
             <p className="mt-2 max-w-2xl font-mono text-sm text-muted">
               Settlement in USDT0. Unpaid requests receive HTTP 402 with accept
-              details.
+              details. Dispatch is the flagship: the two scans below gate every
+              hire Foreman makes and remain independently callable.
             </p>
 
             <div className="mt-7 grid gap-4 sm:mt-9 sm:gap-6 md:grid-cols-2">
+              <div className="relative overflow-hidden rounded-2xl border border-gold/30 bg-black/35 p-4 sm:p-5 md:col-span-2">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold/70 to-transparent"
+                />
+                <div className="flex items-start justify-between gap-3">
+                  <p className="break-all font-mono text-[11px] uppercase tracking-[0.14em] text-lime">
+                    POST /api/dispatch
+                  </p>
+                  <CopyButton text={DISPATCH_EXAMPLE} label="dispatch example" />
+                </div>
+                <p className="gold-number mt-3 font-mono text-base sm:text-lg">
+                  {PRICES.dispatch} USDT0 per job
+                </p>
+                <p className="mt-2 max-w-3xl font-mono text-xs leading-relaxed text-muted">
+                  One goal and one budget in. Foreman plans the subtasks, hires
+                  marketplace ASPs where suitable, trust-scans every payee
+                  before paying it, and returns per-subtask results plus a
+                  receipts array with settlement transaction hashes. The fixed
+                  fee covers a bounded job: at most 0.35 USDT0 is spent
+                  downstream, the rest is margin.
+                </p>
+                <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted sm:mt-4 sm:text-xs">
+                  {DISPATCH_EXAMPLE}
+                </pre>
+              </div>
               <div className="relative overflow-hidden rounded-2xl border border-lime/25 bg-black/35 p-4 sm:p-5">
                 <div
                   aria-hidden
@@ -83,6 +115,11 @@ export function HowAgentsCall() {
                 </div>
                 <p className="gold-number mt-3 font-mono text-base sm:text-lg">
                   {PRICES.agent} USDT0 per call
+                </p>
+                <p className="mt-2 font-mono text-xs leading-relaxed text-muted">
+                  Behavioral DNA for any X Layer address. Runs inside every
+                  dispatch as the hiring standard before a subcontractor is
+                  paid.
                 </p>
                 <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted sm:mt-4 sm:text-xs">
                   {AGENT_EXAMPLE}
@@ -102,6 +139,10 @@ export function HowAgentsCall() {
                 </div>
                 <p className="gold-number mt-3 font-mono text-base sm:text-lg">
                   {PRICES.token} USDT0 per call
+                </p>
+                <p className="mt-2 font-mono text-xs leading-relaxed text-muted">
+                  Token safety score, risk level, and flags. The same check
+                  Foreman applies before a token-touching hire.
                 </p>
                 <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted sm:mt-4 sm:text-xs">
                   {TOKEN_EXAMPLE}

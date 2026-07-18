@@ -60,10 +60,11 @@ describe("okxAccessTimestamp", () => {
 });
 
 describe("buildOkxAccessHeaders", () => {
+  // Fixture values only. Never use real portal keys in tests.
   const credentials = {
-    apiKey: "REDACTED_OKXOS_KEY",
-    secretKey: "REDACTED_OKXOS_SECRET",
-    passphrase: "my-passphrase",
+    apiKey: "test-okxos-api-key",
+    secretKey: "test-okxos-secret-key",
+    passphrase: "test-passphrase",
   };
 
   it("emits the four OK-ACCESS headers with matching sign", () => {

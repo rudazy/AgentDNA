@@ -3,6 +3,7 @@
 export const PRICES = {
   agent: "$0.05",
   token: "$0.01",
+  dispatch: "$0.50",
 } as const;
 
 export const X_LAYER_NETWORK = "eip155:196" as const;
