@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildPlan,
+  canonicalChain,
+  chainFromGoal,
   CAPABILITIES,
   DISPATCH_PRICE_USDT0,
   ForemanError,
@@ -191,6 +193,49 @@ describe("buildPlan taxonomy routing", () => {
     expect(p.subtasks[0]!.kind).toBe("security_check");
     expect(p.subtasks[0]!.route).toBe("external");
     expect(p.subtasks[0]!.subcontractorId).toBe("certik-security");
+  });
+
+  it.each([
+    `Run a security audit on ${TOKEN_ADDR} on bsc`,
+    `Run a security audit on ${TOKEN_ADDR} chain bsc`,
+    `Run a security audit on ${TOKEN_ADDR} on bsc chain`,
+  ])("extracts the chain from goal text: %s", (goal) => {
+    const p = plan(goal);
+    expect(p.subtasks[0]!.route).toBe("external");
+    expect(p.subtasks[0]!.subcontractorId).toBe("certik-security");
+    expect(p.subtasks[0]!.providerChain).toBe("bsc");
+    expect(p.notes.some((n) => n.includes("names no chain"))).toBe(false);
+  });
+
+  it("translates a canonical chain into each provider's own spelling", () => {
+    // CertiK spells it "eth", ChainSentry spells it "ethereum".
+    const sec = plan(`Security audit of ${TOKEN_ADDR} on ethereum`);
+    expect(sec.subtasks[0]!.subcontractorId).toBe("certik-security");
+    expect(sec.subtasks[0]!.providerChain).toBe("eth");
+
+    const tok = plan(`Scan token ${TOKEN_ADDR} for risk on ethereum`);
+    expect(tok.subtasks[0]!.subcontractorId).toBe("chainsentry-token-dd");
+    expect(tok.subtasks[0]!.providerChain).toBe("ethereum");
+  });
+
+  it("lets an explicit context chain win over the goal text", () => {
+    const p = plan(`Security audit of ${TOKEN_ADDR} on bsc`, { chain: "eth" });
+    expect(p.subtasks[0]!.providerChain).toBe("eth");
+  });
+
+  it("does not read a chain out of incidental words", () => {
+    expect(chainFromGoal("audit the base contract for reentrancy")).toBeUndefined();
+    expect(chainFromGoal(`security audit on ${TOKEN_ADDR}`)).toBeUndefined();
+    expect(chainFromGoal("check the odds on the election")).toBeUndefined();
+  });
+
+  it("normalizes chain spellings to one canonical id", () => {
+    expect(canonicalChain("eth")).toBe("ethereum");
+    expect(canonicalChain("Ethereum")).toBe("ethereum");
+    expect(canonicalChain("BNB")).toBe("bsc");
+    expect(canonicalChain("x-layer")).toBe("xlayer");
+    expect(canonicalChain("notachain")).toBeUndefined();
+    expect(canonicalChain(undefined)).toBeUndefined();
   });
 
   it("keeps security checks in house when no chain is named", () => {
@@ -437,6 +482,24 @@ describe("runDispatch", () => {
     expect(res.dryRun).toBe(true);
     expect(res.receipts[0]!.settlementStatus).toBe("dry_run");
     expect(res.receipts[0]!.txHash).toBeNull();
+  });
+
+  it("sends the provider's chain spelling on a goal-extracted chain", async () => {
+    let sentChain: string | undefined;
+    const d = deps({
+      payAndCall: vi.fn().mockImplementation(async (req) => {
+        sentChain = req.query?.chain;
+        return hireOutcome();
+      }),
+    });
+    const res = await runDispatch(
+      { goal: `Security audit of ${TOKEN_ADDR} on ethereum` },
+      d,
+    );
+    // Goal says "ethereum"; CertiK must be called with its own spelling.
+    expect(sentChain).toBe("eth");
+    expect(res.results[0]!.status).toBe("ok");
+    expect(res.receipts).toHaveLength(1);
   });
 
   it("gates on the challenge payee, not the registry payee", async () => {

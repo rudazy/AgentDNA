@@ -109,6 +109,8 @@ export interface PlannedSubtask {
   subcontractorId?: string;
   priceUsdt0: string;
   targetAddress?: string;
+  /** The chosen provider's own spelling of the resolved chain. */
+  providerChain?: string;
   rationale: string;
 }
 
@@ -180,6 +182,73 @@ export const CAPABILITIES: readonly string[] = [
 ];
 
 const ADDRESS_RE = /0x[0-9a-fA-F]{40}/g;
+
+/**
+ * Canonical chain ids and the spellings that appear in goal text and in
+ * registry supportedChains. Providers disagree ("eth" vs "ethereum"), so
+ * candidate matching runs on the canonical id while the provider's own
+ * spelling is what gets sent back to it.
+ */
+const CHAIN_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  ethereum: ["ethereum", "eth", "mainnet"],
+  bsc: ["bsc", "bnb", "binance", "bnbchain"],
+  base: ["base"],
+  solana: ["solana", "sol"],
+  polygon: ["polygon", "matic"],
+  arbitrum: ["arbitrum", "arb"],
+  optimism: ["optimism", "op"],
+  avalanche: ["avalanche", "avax"],
+  tron: ["tron", "trx"],
+  ton: ["ton"],
+  sui: ["sui"],
+  plasma: ["plasma"],
+  xlayer: ["xlayer", "okc"],
+};
+
+const ALIAS_TO_CANONICAL: ReadonlyMap<string, string> = new Map(
+  Object.entries(CHAIN_ALIASES).flatMap(([canonical, aliases]) =>
+    aliases.map((alias) => [alias, canonical] as const),
+  ),
+);
+
+/** Normalize any chain spelling to its canonical id. Undefined when unknown. */
+export function canonicalChain(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const key = raw.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  return ALIAS_TO_CANONICAL.get(key);
+}
+
+/**
+ * A chain name must be anchored by a connector ("on bsc", "chain bsc") or a
+ * trailing noun ("bsc chain"). Bare mentions are not enough: "the base
+ * contract" and "op the trade" would otherwise read as chain names.
+ */
+const CHAIN_MENTION_RE =
+  /\b(?:on|chain|network|via)\s+(?:the\s+)?([a-z0-9][a-z0-9-]{1,19})\b|\b([a-z0-9][a-z0-9-]{1,19})\s+(?:chain|network)\b/gi;
+
+/** Pull the first recognizable chain name out of goal text. */
+export function chainFromGoal(goal: string): string | undefined {
+  CHAIN_MENTION_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CHAIN_MENTION_RE.exec(goal)) !== null) {
+    const found = canonicalChain(match[1] ?? match[2]);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Chain for this job as a canonical id. An explicit context.chain always wins,
+ * even when unrecognized, so a caller can never be silently overridden by
+ * something the goal text happened to say.
+ */
+export function resolveChain(
+  goal: string,
+  context: DispatchContext,
+): string | undefined {
+  if (context.chain !== undefined) return canonicalChain(context.chain);
+  return chainFromGoal(goal);
+}
 
 interface TaxonomyEntry {
   kind: TaskKind;
@@ -383,6 +452,7 @@ export function buildPlan(
   jobCapMicro: bigint,
   registry: Subcontractor[],
 ): DispatchPlan {
+  const effectiveChain = resolveChain(goal, context);
   const matched = TAXONOMY.filter((t) => t.pattern.test(goal));
   if (matched.length === 0) {
     throw new ForemanError(
@@ -443,6 +513,7 @@ export function buildPlan(
       .sort((a, b) => (a.micro < b.micro ? -1 : 1));
 
     let chosen: { s: Subcontractor; micro: bigint } | undefined;
+    let chosenProviderChain: string | undefined;
     for (const c of candidates) {
       if (c.micro > limits.perSubcallMicro) {
         notes.push(
@@ -456,15 +527,20 @@ export function buildPlan(
         );
         continue;
       }
-      if (
-        c.s.requestStyle === "query-address-chain" &&
-        (!context.chain ||
-          !(c.s.supportedChains ?? []).includes(context.chain.toLowerCase()))
-      ) {
-        notes.push(
-          `${c.s.agentName} (${c.s.serviceName}) skipped: it covers ${(c.s.supportedChains ?? []).join(", ")} and the request ${context.chain ? `names "${context.chain}"` : "names no chain"}.`,
-        );
-        continue;
+      if (c.s.requestStyle === "query-address-chain") {
+        // Match on the canonical id, then hand back the provider's spelling.
+        const supported = c.s.supportedChains ?? [];
+        const providerChain = effectiveChain
+          ? supported.find((sc) => canonicalChain(sc) === effectiveChain)
+          : undefined;
+        if (!providerChain) {
+          const named = effectiveChain ?? context.chain;
+          notes.push(
+            `${c.s.agentName} (${c.s.serviceName}) skipped: it covers ${supported.join(", ")} and the request ${named ? `names "${named}"` : "names no chain"}.`,
+          );
+          continue;
+        }
+        chosenProviderChain = providerChain;
       }
       chosen = c;
       break;
@@ -480,7 +556,8 @@ export function buildPlan(
         subcontractorId: chosen.s.id,
         priceUsdt0: chosen.s.priceUsdt0,
         targetAddress: target,
-        rationale: `Marketplace ASP #${chosen.s.agentId} selected at ${chosen.s.priceUsdt0} USDT0 per call, within all spend caps.`,
+        providerChain: chosenProviderChain,
+        rationale: `Marketplace ASP #${chosen.s.agentId} selected at ${chosen.s.priceUsdt0} USDT0 per call, within all spend caps${chosenProviderChain ? ` (chain "${chosenProviderChain}")` : ""}.`,
       });
       continue;
     }
@@ -548,6 +625,7 @@ export function buildHireRequest(
   goal: string,
   context: DispatchContext,
   target: string | undefined,
+  providerChain?: string,
 ): HireRequest {
   if (sub.requestStyle === "query-address-chain") {
     return {
@@ -556,7 +634,7 @@ export function buildHireRequest(
       method: "GET",
       query: {
         address: target ?? "",
-        chain: (context.chain ?? "").toLowerCase(),
+        chain: (providerChain ?? context.chain ?? "").toLowerCase(),
       },
       serviceName: `${sub.agentName} ${sub.serviceName}`,
     };
@@ -771,7 +849,13 @@ async function runExternal(
   const started = deps.now().getTime();
   try {
     const outcome = await deps.payAndCall(
-      buildHireRequest(sub, goal, context, planned.targetAddress),
+      buildHireRequest(
+        sub,
+        goal,
+        context,
+        planned.targetAddress,
+        planned.providerChain,
+      ),
       spend,
       { verifyPayee },
     );
@@ -899,7 +983,13 @@ export async function runDispatch(
   validateInput(input);
 
   const goal = input.goal.trim();
-  const context = input.context ?? {};
+  // Fold any chain named in the goal into the context once, so the plan and
+  // every outbound hire agree on one resolved value.
+  const rawContext = input.context ?? {};
+  const resolvedChain = resolveChain(goal, rawContext);
+  const context: DispatchContext = resolvedChain
+    ? { ...rawContext, chain: resolvedChain }
+    : rawContext;
   const budgetMicro = budgetToMicro(input.budget);
   const spend = new SpendController(deps.limits, deps.dayLedger, budgetMicro);
 
