@@ -18,6 +18,13 @@ import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import type { NextRequest, NextResponse } from "next/server";
 import { PRICES, USDT0_ADDRESS, X_LAYER_NETWORK } from "./constants";
 import {
+  describeWiringFailure,
+  resolveGate,
+  wiringErrorBody,
+  type AppRouteHandler,
+  type WiringFailure,
+} from "./x402-wiring";
+import {
   buildUnpaidChallengeBody,
   priceForScan,
   type ScanKind,
@@ -25,6 +32,13 @@ import {
 
 export { PRICES, USDT0_ADDRESS, X_LAYER_NETWORK };
 export { buildUnpaidChallengeBody, type ScanKind } from "./x402-challenge";
+export {
+  redactSecrets,
+  resolveGate,
+  wiringErrorBody,
+  type WiringFailure,
+  type WiringStage,
+} from "./x402-wiring";
 
 export function isDemoMode(): boolean {
   const v = process.env.DEMO_MODE?.trim().toLowerCase();
@@ -109,7 +123,21 @@ export function getResourceServer(): x402ResourceServer {
   return resourceServerSingleton;
 }
 
-type AppRouteHandler = (request: NextRequest) => Promise<NextResponse>;
+async function wiringErrorResponse(
+  failure: WiringFailure,
+): Promise<NextResponse> {
+  const { NextResponse: NR } = await import("next/server");
+  const { status, body } = wiringErrorBody(failure);
+  return NR.json(body, { status });
+}
+
+function wiringFailureHandler(failure: WiringFailure): AppRouteHandler {
+  // Logged once per cold start rather than per request, with the same redaction.
+  console.error(
+    `[x402] wiring failed at ${failure.stage}: ${failure.detail}`,
+  );
+  return async () => wiringErrorResponse(failure);
+}
 
 /**
  * Wrap a route handler with live x402 when DEMO_MODE is off.
@@ -125,24 +153,42 @@ export function protectWithX402(
   }
 
   if (!hasX402Credentials()) {
-    return async () => {
-      const { NextResponse: NR } = await import("next/server");
-      return NR.json(
-        {
-          error: "Payment verification unavailable",
-          code: "PAYMENT_REQUIRED",
-          details:
-            "DEMO_MODE is off but OKX SA credentials or X402_PAYTO_ADDRESS are missing. Configure OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE, and X402_PAYTO_ADDRESS.",
-          accepts: buildUnpaidChallengeBody(scan, getPayToAddress() || null)
-            .accepts,
-        },
-        { status: 402 },
-      );
-    };
+    return wiringFailureHandler({
+      stage: "credentials",
+      detail:
+        "DEMO_MODE is off but OKX SA credentials or X402_PAYTO_ADDRESS are missing. " +
+        "Configure OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE, and X402_PAYTO_ADDRESS.",
+    });
   }
 
-  const server = getResourceServer();
-  const routeConfig = buildRouteConfig(scan);
-  // syncFacilitatorOnStart true: initialize on first request in serverless.
-  return withX402(handler, routeConfig, server, undefined, undefined, true);
+  const gate = resolveGate({
+    resourceServer: () => getResourceServer(),
+    routeConfig: () => buildRouteConfig(scan),
+    // syncFacilitatorOnStart true: initialize on first request in serverless.
+    wrap: (server, config) =>
+      withX402(
+        handler,
+        config as RouteConfig,
+        server as x402ResourceServer,
+        undefined,
+        undefined,
+        true,
+      ),
+  });
+
+  if (!gate.ok) return wiringFailureHandler(gate.failure);
+
+  // The facilitator sync is deferred to the first request, so a wiring fault can
+  // still surface here rather than above. Catching it keeps the failure
+  // diagnosable instead of an empty 500, and never runs the paid handler.
+  const gated = gate.handler;
+  return async (request: NextRequest): Promise<NextResponse> => {
+    try {
+      return await gated(request);
+    } catch (err) {
+      const failure = describeWiringFailure("request", err);
+      console.error(`[x402] wiring failed at request: ${failure.detail}`);
+      return wiringErrorResponse(failure);
+    }
+  };
 }

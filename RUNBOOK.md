@@ -79,6 +79,8 @@ Defaults to the USDT0 contract on X Layer for both address and token. Prints the
 | `MAX_SPEND_PER_DAY` | Optional | Cap per UTC day in USDT0 (in-memory per isolate). Default `5.00` |
 | `FOREMAN_SUBCALL_TIMEOUT_MS` | Optional | Timeout per downstream call. Default `20000` |
 | `XLAYER_RPC_URL` | Optional | X Layer RPC for the buyer signer. Default `https://rpc.xlayer.tech` |
+| `BUYER_PRIVATE_KEY` | Script only | Buyer wallet key used by `scripts/paid-dispatch.ts --confirm`. A caller wallet, never Foreman's float. Not read by the app |
+| `DISPATCH_URL` | Script only | Endpoint for `scripts/paid-dispatch.ts`. Default `https://agentdnas.vercel.app/api/dispatch` |
 
 `.env.local` is gitignored. Never commit secrets.
 
@@ -208,6 +210,58 @@ curl -i -X POST https://agentdnas.vercel.app/api/dispatch ^
 2. Paid call from an x402 client. Expect 200 with `plan`, `results`, `receipts[]`; each external receipt carries `txHash`, `settlementStatus`, and `trustCheck`.
 3. Verify the receipt tx hashes on the X Layer explorer and confirm the float wallet balance dropped by exactly `totalPaid`.
 
+## Recorded paid dispatch (scripts/paid-dispatch.ts)
+
+One clean buyer-side run against the live endpoint, for demo recording. The
+script is the x402 BUYER: it pays Foreman's inbound 0.50 USDT0 fee the same way
+any calling agent would, then prints the plan, results, receipts, and settlement
+transaction hashes.
+
+VPN must be on. This machine's resolver blocks okx.com domains, and the okx.com
+payment rails plus the deployment host are both reached during a real run.
+
+Env needed in `.env.local`:
+
+```
+BUYER_PRIVATE_KEY=0x...
+DISPATCH_URL=https://agentdnas.vercel.app/api/dispatch
+XLAYER_RPC_URL=
+```
+
+`BUYER_PRIVATE_KEY` is a caller wallet funded with USDT0 on X Layer. It is not
+Foreman's float and no route in the app reads it.
+
+1. Rehearsal. Does everything except sign and pay, then stops:
+
+```bash
+npx tsx scripts/paid-dispatch.ts
+```
+
+Expect the request block, the payment challenge (0.50 USDT0, `eip155:196`, the
+seller payTo), then `dry run, pass --confirm to send real payment`. Nothing is
+spent.
+
+2. Real recorded call:
+
+```bash
+npx tsx scripts/paid-dispatch.ts --confirm
+```
+
+Expect the inbound settlement tx hash, the plan with each subtask route and
+provider, the results, the per subcontractor receipts with their own tx hashes
+and trust verdicts, then totals.
+
+Options: `--goal "<text>"`, `--budget <usdt0>`, `--url <endpoint>`.
+
+Safety rails: refuses any challenge above 0.50 USDT0, refuses a challenge that
+is not USDT0 on `eip155:196`, and runs exactly one dispatch with no loops.
+
+Default goal note: chain resolution is job-wide and addresses are claimed in
+taxonomy order (token risk before security check), not sentence order. The
+default goal names both targets on bsc and puts the token clause first for that
+reason. If you change it, run the rehearsal first and confirm the plan block
+pairs each address with the intended subtask.
+
 ## Remaining manual steps for Ludarep
 
 1. Place the avatar file at `docs/assets/foreman-avatar-440.png`.
@@ -231,6 +285,8 @@ rg "[\x{1F300}-\x{1FAFF}]" --glob "!node_modules/**" --glob "!.next/**"
 | 503 chain data | Missing/invalid `OKXOS_API_KEY`, `OKXOS_SECRET_KEY`, or `OKXOS_PASSPHRASE`; or sign mismatch |
 | 429 with quota message | OKX OS Basic/Premium monthly free quota (100K calls each) exhausted; top up or subscribe in the dev portal |
 | Local ENOTFOUND web3.okx.com | Some resolvers block okx.com domains; use VPN or DNS override. Vercel is unaffected |
+| 503 `X402_WIRING_FAILED` on a paid route | The seller wiring failed. Read `stage` in the body: `credentials` means OKX SA vars or `X402_PAYTO_ADDRESS` are missing; `facilitator` means `OKXFacilitatorClient` construction threw; `route-config` means the route config threw; `middleware` means `withX402` threw at import; `request` means the deferred facilitator sync failed on first request, usually invalid, expired, or revoked OKX SA credentials, or the facilitator host being unreachable from the deploy region |
+| Empty 500 with no body on a paid route | Should no longer happen. `protectWithX402` catches wiring throws at import and at request time and returns 503 JSON instead. An empty 500 now means a crash outside that guard; check Vercel function logs |
 | 402 always on paid routes | Expected without payment when DEMO_MODE off; check credentials + `X402_PAYTO_ADDRESS` |
 | Playground 403 | Must call from browser same origin (Origin/Referer host match) |
 | Playground 429 | 10 free scans per hour per IP (in-memory per isolate) |

@@ -3,7 +3,7 @@
  *
  * Runs ONLY the unpaid first leg of the hire flow: send the request a real hire
  * would send, with no payment header, and inspect the 402 challenge that comes
- * back. Nothing is signed and no float is spent — this module never imports the
+ * back. Nothing is signed and no float is spent, because this module never imports the
  * payment layer, so there is no code path here that can produce a signature.
  *
  * Per registry entry it answers three questions:
