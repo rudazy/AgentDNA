@@ -36,6 +36,7 @@ export type HirerErrorKind =
   | "Config"
   | "SpendLimit"
   | "PriceMismatch"
+  | "PayeeBlocked"
   | "PaymentFailed"
   | "ServiceFailed";
 
@@ -282,11 +283,24 @@ export interface PaymentLayer {
   ): Promise<Record<string, string>>;
 }
 
+/** Verdict from the caller's hiring standard on a challenge payee address. */
+export interface PayeeVerdict {
+  allowed: boolean;
+  note?: string;
+}
+
 export interface HirerDeps {
   fetchImpl: typeof fetch;
   paymentLayer: PaymentLayer;
   timeoutMs: number;
   now: () => Date;
+  /**
+   * Gate on the address that will actually receive funds, read from the parsed
+   * 402 challenge. Called after the challenge is validated and before anything
+   * is reserved or signed, so a rejection costs nothing. The registry payee is
+   * only a hint; this is the binding check.
+   */
+  verifyPayee?: (payee: string) => Promise<PayeeVerdict>;
 }
 
 function getTimeoutMs(env: Record<string, string | undefined>): number {
@@ -588,7 +602,7 @@ async function getDefaultPaymentLayer(): Promise<PaymentLayer> {
   return defaultPaymentLayerSingleton;
 }
 
-function buildRequestUrl(req: HireRequest): string {
+export function buildRequestUrl(req: HireRequest): string {
   const url = assertSafeEndpoint(req.endpoint);
   if (req.query) {
     for (const [k, v] of Object.entries(req.query)) {
@@ -598,7 +612,7 @@ function buildRequestUrl(req: HireRequest): string {
   return url.toString();
 }
 
-function buildRequestInit(
+export function buildRequestInit(
   req: HireRequest,
   extraHeaders?: Record<string, string>,
 ): RequestInit {
@@ -735,6 +749,20 @@ export async function payAndCall(
       "PriceMismatch",
       402,
     );
+  }
+
+  // Hiring standard on the real recipient. Runs before any reservation or
+  // signature, so a blocked payee never costs float.
+  if (deps?.verifyPayee) {
+    const verdict = await deps.verifyPayee(selected.entry.payTo);
+    if (!verdict.allowed) {
+      throw new HirerError(
+        `${req.endpoint} pays ${selected.entry.payTo}, which failed the hiring ` +
+          `standard${verdict.note ? `: ${verdict.note}` : ""}`,
+        "PayeeBlocked",
+        402,
+      );
+    }
   }
 
   const reservation = spend.reserve(selected.amountAtomic);

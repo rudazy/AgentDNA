@@ -26,6 +26,8 @@ import {
   SpendController,
   type HireOutcome,
   type HireRequest,
+  type HirerDeps,
+  type PayeeVerdict,
   type SpendLimits,
 } from "./hirer";
 import {
@@ -88,6 +90,12 @@ export interface TrustCheckResult {
   status: "passed" | "blocked" | "unavailable";
   grade?: DisplayGrade;
   deliveryProbability?: number;
+  /**
+   * The address this verdict was actually computed against. Once a 402 has been
+   * parsed this is the challenge payTo, which is the address that receives the
+   * funds; before that it is the registry hint.
+   */
+  payee?: string;
   note?: string;
 }
 
@@ -282,6 +290,7 @@ export interface ForemanDeps {
   payAndCall: (
     req: HireRequest,
     spend: SpendController,
+    hirerDeps?: Partial<HirerDeps>,
   ) => Promise<HireOutcome>;
   runAgentScan: (address: `0x${string}`) => Promise<AgentScanResponse>;
   runTokenScan: (address: `0x${string}`) => Promise<TokenScanResponse>;
@@ -305,7 +314,8 @@ function defaultDeps(): ForemanDeps {
   return {
     limits: getSpendLimits(),
     dayLedger: getGlobalDayLedger(),
-    payAndCall: (req, spend) => realPayAndCall(req, spend),
+    payAndCall: (req, spend, hirerDeps) =>
+      realPayAndCall(req, spend, hirerDeps),
     runAgentScan: realRunAgentScan,
     runTokenScan: realRunTokenScan,
     registry: loadRegistry(),
@@ -529,7 +539,11 @@ export function buildPlan(
   };
 }
 
-function buildHireRequest(
+/**
+ * Shape the outbound request for one subcontractor. Exported so liveness
+ * probes can send exactly what a real hire would send.
+ */
+export function buildHireRequest(
   sub: Subcontractor,
   goal: string,
   context: DispatchContext,
@@ -626,14 +640,28 @@ async function runInHouse(
   }
 }
 
-async function trustCheckPayee(
+/**
+ * Subtasks run concurrently, so the cache holds the in-flight promise rather
+ * than the settled value. Caching the value alone lets two subtasks sharing a
+ * payee both miss and scan the same address twice.
+ */
+function trustCheckPayee(
   payee: string,
   deps: ForemanDeps,
-  cache: Map<string, TrustCheckResult>,
+  cache: Map<string, Promise<TrustCheckResult>>,
 ): Promise<TrustCheckResult> {
-  const cached = cache.get(payee.toLowerCase());
-  if (cached) return cached;
+  const key = payee.toLowerCase();
+  const inFlight = cache.get(key);
+  if (inFlight) return inFlight;
+  const started = computeTrustCheck(payee, deps);
+  cache.set(key, started);
+  return started;
+}
 
+async function computeTrustCheck(
+  payee: string,
+  deps: ForemanDeps,
+): Promise<TrustCheckResult> {
   let check: TrustCheckResult;
   if (deps.dryRun) {
     check = {
@@ -667,7 +695,6 @@ async function trustCheckPayee(
       };
     }
   }
-  cache.set(payee.toLowerCase(), check);
   return check;
 }
 
@@ -677,7 +704,7 @@ async function runExternal(
   context: DispatchContext,
   spend: SpendController,
   deps: ForemanDeps,
-  trustCache: Map<string, TrustCheckResult>,
+  trustCache: Map<string, Promise<TrustCheckResult>>,
 ): Promise<SubtaskExecution> {
   const sub = deps.registry.find((s) => s.id === planned.subcontractorId);
   if (!sub) {
@@ -716,11 +743,37 @@ async function runExternal(
     };
   }
 
+  // The registry payee above is only a hint. The binding check runs against the
+  // payTo in the parsed 402, before anything is reserved or signed.
+  const captured: { trust: TrustCheckResult | null; note: string | null } = {
+    trust: null,
+    note: null,
+  };
+  const verifyPayee = async (payee: string): Promise<PayeeVerdict> => {
+    const check = await trustCheckPayee(payee, deps, trustCache);
+    const mismatched =
+      payee.toLowerCase() !== sub.payeeAddress.toLowerCase();
+    const mismatchNote = mismatched
+      ? `Payee mismatch: the challenge pays ${payee} but the registry lists ${sub.payeeAddress}.`
+      : null;
+    captured.note = mismatchNote;
+    captured.trust = {
+      ...check,
+      payee,
+      note: [check.note, mismatchNote].filter(Boolean).join(" ") || undefined,
+    };
+    return {
+      allowed: check.status !== "blocked",
+      note: captured.trust.note,
+    };
+  };
+
   const started = deps.now().getTime();
   try {
     const outcome = await deps.payAndCall(
       buildHireRequest(sub, goal, context, planned.targetAddress),
       spend,
+      { verifyPayee },
     );
     const receipt: DispatchReceipt = {
       subcontractor: `${sub.agentName} (${sub.serviceName})`,
@@ -728,7 +781,7 @@ async function runExternal(
       amountUsdt0: outcome.receipt.amountUsdt0,
       txHash: outcome.receipt.txHash,
       settlementStatus: outcome.receipt.settlementStatus,
-      trustCheck: trust,
+      trustCheck: captured.trust ?? trust,
       durationMs: outcome.receipt.dryRun
         ? 0
         : deps.now().getTime() - started,
@@ -747,7 +800,7 @@ async function runExternal(
         data: outcome.result,
       },
       receipt,
-      planNotes: [],
+      planNotes: captured.note ? [`${sub.agentName}: ${captured.note}`] : [],
     };
   } catch (err) {
     if (err instanceof HirerError && err.kind === "SpendLimit") {
@@ -760,7 +813,11 @@ async function runExternal(
       );
     }
     const detail = err instanceof Error ? err.message : String(err);
-    const note = `${sub.agentName} hire failed (${err instanceof HirerError ? err.kind : "Error"}): ${detail}`;
+    // A payee rejected at the challenge reads as a hiring decision, not a fault.
+    const note =
+      err instanceof HirerError && err.kind === "PayeeBlocked"
+        ? `${sub.agentName} not hired: ${detail}`
+        : `${sub.agentName} hire failed (${err instanceof HirerError ? err.kind : "Error"}): ${detail}`;
     const fallback = fallbackPlanFor(planned);
     if (fallback) {
       const result = await runInHouse(fallback, deps);
@@ -848,7 +905,7 @@ export async function runDispatch(
 
   const plan = buildPlan(goal, context, deps.limits, spend.jobCapMicro, deps.registry);
 
-  const trustCache = new Map<string, TrustCheckResult>();
+  const trustCache = new Map<string, Promise<TrustCheckResult>>();
   const receipts: DispatchReceipt[] = [];
   const runtimeNotes: string[] = [];
 

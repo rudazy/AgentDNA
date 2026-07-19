@@ -186,11 +186,18 @@ describe("buildPlan taxonomy routing", () => {
     expect(dd.route).toBe("in_house");
   });
 
-  it("routes security checks to the external security ASP", () => {
-    const p = plan(`Run a security audit on ${TOKEN_ADDR}`);
+  it("routes security checks to the external security ASP when a chain is named", () => {
+    const p = plan(`Run a security audit on ${TOKEN_ADDR}`, { chain: "eth" });
     expect(p.subtasks[0]!.kind).toBe("security_check");
     expect(p.subtasks[0]!.route).toBe("external");
     expect(p.subtasks[0]!.subcontractorId).toBe("certik-security");
+  });
+
+  it("keeps security checks in house when no chain is named", () => {
+    // CertiK is query-address-chain, so an unqualified goal cannot reach it.
+    const p = plan(`Run a security audit on ${TOKEN_ADDR}`);
+    expect(p.subtasks[0]!.route).toBe("in_house");
+    expect(p.notes.some((n) => n.includes("names no chain"))).toBe(true);
   });
 
   it("splits a composite goal into parallel subtasks", () => {
@@ -315,7 +322,10 @@ describe("runDispatch", () => {
       runAgentScan: vi.fn().mockResolvedValue(agentScan("F")),
     });
     const res = await runDispatch(
-      { goal: `Run a security audit on contract ${TOKEN_ADDR}` },
+      {
+        goal: `Run a security audit on contract ${TOKEN_ADDR}`,
+        context: { chain: "eth" },
+      },
       d,
     );
     expect(d.payAndCall).not.toHaveBeenCalled();
@@ -340,7 +350,7 @@ describe("runDispatch", () => {
         .mockRejectedValue(new HirerError("endpoint down", "ServiceFailed", 503)),
     });
     const res = await runDispatch(
-      { goal: `Security audit of ${TOKEN_ADDR}` },
+      { goal: `Security audit of ${TOKEN_ADDR}`, context: { chain: "eth" } },
       d,
     );
     expect(res.results[0]!.status).toBe("ok");
@@ -427,6 +437,56 @@ describe("runDispatch", () => {
     expect(res.dryRun).toBe(true);
     expect(res.receipts[0]!.settlementStatus).toBe("dry_run");
     expect(res.receipts[0]!.txHash).toBeNull();
+  });
+
+  it("gates on the challenge payee, not the registry payee", async () => {
+    const CHALLENGE_PAYEE = "0x00000000000000000000000000000000000000C3";
+    let seen: string | undefined;
+    const d = deps({
+      payAndCall: vi.fn().mockImplementation(async (_req, _spend, hd) => {
+        const verdict = await hd.verifyPayee(CHALLENGE_PAYEE);
+        seen = CHALLENGE_PAYEE;
+        if (!verdict.allowed) throw new HirerError("blocked", "PayeeBlocked", 402);
+        return hireOutcome();
+      }),
+    });
+    const res = await runDispatch({ goal: "polymarket odds please" }, d);
+    expect(seen).toBe(CHALLENGE_PAYEE);
+    expect(d.runAgentScan).toHaveBeenCalledWith(CHALLENGE_PAYEE);
+    expect(res.receipts[0]!.trustCheck?.payee).toBe(CHALLENGE_PAYEE);
+    expect(res.receipts[0]!.trustCheck?.note).toContain("Payee mismatch");
+    expect(res.plan.notes.some((n) => n.includes("Payee mismatch"))).toBe(true);
+  });
+
+  it("refuses to sign when the challenge payee fails the hiring standard", async () => {
+    const BAD_PAYEE = "0x00000000000000000000000000000000000000D4";
+    let signed = false;
+    const d = deps({
+      // Registry payee grades B; the address in the challenge grades F.
+      runAgentScan: vi.fn().mockImplementation(async (addr: string) =>
+        addr.toLowerCase() === BAD_PAYEE.toLowerCase()
+          ? agentScan("F")
+          : agentScan("B"),
+      ),
+      payAndCall: vi.fn().mockImplementation(async (_req, _spend, hd) => {
+        const verdict = await hd.verifyPayee(BAD_PAYEE);
+        if (!verdict.allowed) {
+          throw new HirerError(
+            `pays ${BAD_PAYEE}, which failed the hiring standard`,
+            "PayeeBlocked",
+            402,
+          );
+        }
+        signed = true;
+        return hireOutcome();
+      }),
+    });
+    const res = await runDispatch({ goal: "polymarket odds please" }, d);
+    expect(signed).toBe(false);
+    expect(res.receipts).toHaveLength(0);
+    expect(res.totalPaid).toBe("0");
+    expect(res.results[0]!.status).toBe("failed");
+    expect(res.results[0]!.summary).toContain("not hired");
   });
 
   it("reuses the cached trust check for repeated payees in one job", async () => {

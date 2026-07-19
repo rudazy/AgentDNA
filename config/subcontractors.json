@@ -9,12 +9,13 @@
       "agentName": "CertiK",
       "serviceName": "CertiK Security APIs",
       "capability": "security_check",
-      "endpoint": "https://skills-for-okx.certik.com/api/services",
-      "method": "POST",
-      "requestStyle": "goal-context",
+      "endpoint": "https://skills-for-okx.certik.com/api/token-scan",
+      "method": "GET",
+      "requestStyle": "query-address-chain",
+      "supportedChains": ["bsc", "eth", "solana", "arbitrum", "base", "polygon", "avax", "tron", "ton", "plasma", "sui"],
       "priceUsdt0": "0.001",
-      "payeeAddress": "0xFD417F307B76cAD8f62A36E26e30131126a4c199",
-      "notes": "Token scans, Skynet scores, EVM traces. Rating 100, sold 87, securityRate 5.0 as of 2026-07-17."
+      "payeeAddress": "0x0df8e47790d2c1ec3e8dc31abc1ea8720519042f",
+      "notes": "Token contract security summary: score, alerts, tax signals, holder concentration, LP lock. The provider catalog is GET /api/services; /api/token-scan is the hireable endpoint (the old /api/services entry was a catalog, not a service). Chain vocabulary is CertiK's own: 'eth', not 'ethereum'. Challenge pays 0x0df8e4..042f on eip155:196, confirmed by probe 2026-07-19."
     },
     {
       "id": "chainsentry-token-dd",
