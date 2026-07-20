@@ -118,6 +118,23 @@ export function Playground() {
                 : "Free preview, rate limited (10/hour). Agents pay per call via x402 on the public scan endpoints."}
             </p>
 
+            {/* Shown in both modes: the default tab is a scan, so a dispatch
+                only note would be invisible to most visitors. */}
+            <p className="mt-2 max-w-2xl font-mono text-sm leading-relaxed text-muted">
+              {mode === "dispatch"
+                ? "Dry run here means visitors cannot spend Foreman's float."
+                : "This preview is free, so nothing is charged and no float is spent."}{" "}
+              For real hires that Foreman paid and settled on X Layer, see{" "}
+              <a
+                href="#proven"
+                className="touch-link text-lime underline decoration-lime/40 underline-offset-4 hover:decoration-lime"
+              >
+                Proven onchain
+              </a>{" "}
+              below, executed through the paid endpoint with verifiable
+              transaction hashes.
+            </p>
+
             <div className="mt-7 flex flex-col gap-3 sm:mt-9 sm:gap-4">
               {mode === "dispatch" ? (
                 <>

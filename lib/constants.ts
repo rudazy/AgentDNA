@@ -14,6 +14,13 @@ export const PRICES = {
  */
 export const DEFAULT_FACILITATOR_BASE_URL = "https://web3.okx.com" as const;
 
+/**
+ * X Layer explorer transaction base. The shorter /explorer/x-layer/tx/<hash>
+ * form 302s to this /evm/ path, so link the canonical one and skip the hop.
+ */
+export const X_LAYER_EXPLORER_TX_BASE =
+  "https://web3.okx.com/explorer/x-layer/evm/tx" as const;
+
 export const X_LAYER_NETWORK = "eip155:196" as const;
 export const USDT0_ADDRESS =
   "0x779Ded0c9e1022225f8E0630b35a9b54bE713736" as const;

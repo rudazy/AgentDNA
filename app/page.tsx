@@ -2,6 +2,7 @@ import { HowAgentsCall } from "@/components/HowAgentsCall";
 import { HexSeal, SectionLabel } from "@/components/Ornament";
 import { MotionBackground } from "@/components/MotionBackground";
 import { Playground } from "@/components/Playground";
+import { ProvenOnchain } from "@/components/ProvenOnchain";
 
 export default function HomePage() {
   return (
@@ -69,6 +70,7 @@ export default function HomePage() {
         </header>
 
         <Playground />
+        <ProvenOnchain />
         <HowAgentsCall />
 
         <footer className="border-t border-lime/10 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:py-12">
