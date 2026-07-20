@@ -262,30 +262,29 @@ default goal names both targets on bsc and puts the token clause first for that
 reason. If you change it, run the rehearsal first and confirm the plan block
 pairs each address with the intended subtask.
 
-## Temporary facilitator diagnostic (delete after use)
+## Facilitator diagnostic (CLI only)
 
-`/api/diag/facilitator` runs the same signed, read-only `getSupported` call as
-`scripts/diagnose-facilitator.ts`, but from the deployed server using that
-server's own `OKX_*` environment. Both share `lib/facilitator-diag.ts`, so local
-and deployed results come from identical code. It signs nothing and spends
-nothing.
-
-The route is a 404 unless `DIAG_TOKEN` is set, so deploying the file alone
-exposes nothing. Set `DIAG_TOKEN` to a long random string in Vercel, redeploy,
-then:
+`scripts/diagnose-facilitator.ts` runs the same signed, read-only `getSupported`
+call the SDK makes, and prints the raw status and parsed kinds. Use it when a
+paid route reports "no supported payment kinds". Read only: signs nothing,
+settles nothing, spends nothing. No secret value is printed; credentials appear
+only as a SHA-256 prefix.
 
 ```bash
-curl -s https://agentdnas.vercel.app/api/diag/facilitator -H "x-diag-token: <DIAG_TOKEN>"
+npx tsx scripts/diagnose-facilitator.ts
 ```
 
-Read `status`, `hasXLayerExactKind`, `baseUrlWarning`, and
-`credentials.apiKeyFingerprint`. Compare that fingerprint against a known good
-environment to tell a wrong key from an environmental problem such as an IP
-allowlist. No secret values appear in the response; keys are reported only as a
-SHA-256 prefix.
+VPN must be on, since this machine's resolver blocks okx.com domains.
 
-Cleanup when done: delete `app/api/diag/`, remove `DIAG_TOKEN` from Vercel and
-`.env.local`, redeploy. `lib/facilitator-diag.ts` and the CLI script can stay.
+Interpretation: 401 or 403 means the SA key is wrong, revoked, IP restricted, or
+not provisioned for x402; 404 means a wrong `OKX_FACILITATOR_BASE_URL`, which
+should normally be unset; 200 with an empty kinds list means the credentials are
+fine but the account is not provisioned for x402 settlement.
+
+There was previously a token-gated web route at `/api/diag/facilitator` for
+running this against the deployed environment. It was removed after the
+facilitator issue was resolved. If it is ever needed again, rebuild it gated
+behind an env token so that deploying the file alone exposes nothing.
 
 ## Remaining manual steps for Ludarep
 
