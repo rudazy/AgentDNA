@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   describeWiringFailure,
   errorChain,
+  getFacilitatorBaseUrl,
   redactSecrets,
   resolveGate,
   wiringErrorBody,
@@ -137,6 +138,49 @@ describe("redactSecrets", () => {
 
   it("leaves ordinary text alone", () => {
     expect(redactSecrets("plain failure", env)).toBe("plain failure");
+  });
+});
+
+describe("getFacilitatorBaseUrl", () => {
+  it("falls back to the OKX default when the env var is unset", () => {
+    expect(getFacilitatorBaseUrl({})).toBe("https://web3.okx.com");
+  });
+
+  it("falls back to the default when the env var is empty or whitespace", () => {
+    expect(getFacilitatorBaseUrl({ OKX_FACILITATOR_BASE_URL: "" })).toBe(
+      "https://web3.okx.com",
+    );
+    expect(getFacilitatorBaseUrl({ OKX_FACILITATOR_BASE_URL: "   " })).toBe(
+      "https://web3.okx.com",
+    );
+  });
+
+  it("never returns undefined, which the SDK spread would turn into a literal", () => {
+    // { baseUrl: DEFAULT, ...{ baseUrl: undefined } } yields undefined, so the
+    // request URL becomes "undefined/api/v6/pay/x402/supported".
+    for (const env of [{}, { OKX_FACILITATOR_BASE_URL: undefined }]) {
+      const resolved = getFacilitatorBaseUrl(env);
+      expect(resolved).toBeTypeOf("string");
+      expect(resolved).not.toContain("undefined");
+      expect(`${resolved}/api/v6/pay/x402/supported`).toBe(
+        "https://web3.okx.com/api/v6/pay/x402/supported",
+      );
+    }
+  });
+
+  it("honours an explicitly configured host", () => {
+    expect(
+      getFacilitatorBaseUrl({ OKX_FACILITATOR_BASE_URL: "https://staging.example.com" }),
+    ).toBe("https://staging.example.com");
+  });
+
+  it("strips trailing slashes so the path is not doubled", () => {
+    expect(
+      getFacilitatorBaseUrl({ OKX_FACILITATOR_BASE_URL: "https://web3.okx.com/" }),
+    ).toBe("https://web3.okx.com");
+    expect(
+      getFacilitatorBaseUrl({ OKX_FACILITATOR_BASE_URL: "https://web3.okx.com///" }),
+    ).toBe("https://web3.okx.com");
   });
 });
 

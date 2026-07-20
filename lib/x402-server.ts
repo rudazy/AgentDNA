@@ -19,6 +19,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import { PRICES, USDT0_ADDRESS, X_LAYER_NETWORK } from "./constants";
 import {
   describeWiringFailure,
+  getFacilitatorBaseUrl,
   resolveGate,
   wiringErrorBody,
   type AppRouteHandler,
@@ -107,11 +108,14 @@ export function getResourceServer(): x402ResourceServer {
     );
   }
 
+  // Always a concrete string. Passing undefined here overwrites the SDK's own
+  // default via object spread and produces "undefined/api/v6/pay/x402/supported",
+  // which fails every request and surfaces only as "no supported payment kinds".
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey,
     secretKey,
     passphrase,
-    baseUrl: process.env.OKX_FACILITATOR_BASE_URL?.trim() || undefined,
+    baseUrl: getFacilitatorBaseUrl(),
     syncSettle: true,
   });
 

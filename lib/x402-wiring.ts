@@ -8,8 +8,26 @@
  */
 
 import type { NextRequest, NextResponse } from "next/server";
+import { DEFAULT_FACILITATOR_BASE_URL } from "./constants";
 
 export type AppRouteHandler = (request: NextRequest) => Promise<NextResponse>;
+
+/**
+ * Resolve the facilitator host to a concrete string.
+ *
+ * Never return undefined. OKXFacilitatorClient applies its default with
+ * `{ baseUrl: DEFAULT, ...config }`, and object spread copies own properties
+ * even when their value is undefined, so passing `baseUrl: undefined` silently
+ * replaces the default and every request goes to "undefined/api/v6/...".
+ * Trailing slashes are stripped because the SDK concatenates the path directly.
+ */
+export function getFacilitatorBaseUrl(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const configured = env.OKX_FACILITATOR_BASE_URL?.trim() ?? "";
+  const chosen = configured === "" ? DEFAULT_FACILITATOR_BASE_URL : configured;
+  return chosen.replace(/\/+$/, "");
+}
 
 /** Which piece of the seller wiring failed. Reported verbatim to the caller. */
 export type WiringStage =

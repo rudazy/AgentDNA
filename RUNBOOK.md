@@ -262,6 +262,31 @@ default goal names both targets on bsc and puts the token clause first for that
 reason. If you change it, run the rehearsal first and confirm the plan block
 pairs each address with the intended subtask.
 
+## Temporary facilitator diagnostic (delete after use)
+
+`/api/diag/facilitator` runs the same signed, read-only `getSupported` call as
+`scripts/diagnose-facilitator.ts`, but from the deployed server using that
+server's own `OKX_*` environment. Both share `lib/facilitator-diag.ts`, so local
+and deployed results come from identical code. It signs nothing and spends
+nothing.
+
+The route is a 404 unless `DIAG_TOKEN` is set, so deploying the file alone
+exposes nothing. Set `DIAG_TOKEN` to a long random string in Vercel, redeploy,
+then:
+
+```bash
+curl -s https://agentdnas.vercel.app/api/diag/facilitator -H "x-diag-token: <DIAG_TOKEN>"
+```
+
+Read `status`, `hasXLayerExactKind`, `baseUrlWarning`, and
+`credentials.apiKeyFingerprint`. Compare that fingerprint against a known good
+environment to tell a wrong key from an environmental problem such as an IP
+allowlist. No secret values appear in the response; keys are reported only as a
+SHA-256 prefix.
+
+Cleanup when done: delete `app/api/diag/`, remove `DIAG_TOKEN` from Vercel and
+`.env.local`, redeploy. `lib/facilitator-diag.ts` and the CLI script can stay.
+
 ## Remaining manual steps for Ludarep
 
 1. Place the avatar file at `docs/assets/foreman-avatar-440.png`.
