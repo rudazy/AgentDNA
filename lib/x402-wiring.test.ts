@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   describeWiringFailure,
+  errorChain,
   redactSecrets,
   resolveGate,
   wiringErrorBody,
@@ -139,7 +140,46 @@ describe("redactSecrets", () => {
   });
 });
 
+describe("errorChain", () => {
+  it("walks the cause chain so the real reason survives", () => {
+    const root = new Error("OKX getSupported failed: 401");
+    const wrapper = new Error("Failed to initialize: no supported payment kinds", {
+      cause: root,
+    });
+    const out = errorChain(wrapper);
+    expect(out).toContain("no supported payment kinds");
+    expect(out).toContain("OKX getSupported failed: 401");
+    expect(out).toContain("caused by");
+  });
+
+  it("returns the bare message when there is no cause", () => {
+    // No cause means the facilitator answered but returned nothing usable.
+    expect(errorChain(new Error("no supported payment kinds"))).toBe(
+      "no supported payment kinds",
+    );
+  });
+
+  it("stops before an unbounded or cyclic chain", () => {
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    (a as Error & { cause?: unknown }).cause = b;
+    const out = errorChain(b);
+    expect(out.split("caused by").length - 1).toBeLessThanOrEqual(3);
+  });
+});
+
 describe("describeWiringFailure", () => {
+  it("reports the facilitator status code through the cause chain", () => {
+    const failure = describeWiringFailure(
+      "request",
+      new Error("Failed to initialize: no supported payment kinds", {
+        cause: new Error("OKX getSupported failed: 403"),
+      }),
+      {},
+    );
+    expect(failure.detail).toContain("403");
+  });
+
   it("scrubs secrets out of the reported detail", () => {
     const env = { OKX_SECRET_KEY: "leaky-secret-value" };
     const failure = describeWiringFailure(

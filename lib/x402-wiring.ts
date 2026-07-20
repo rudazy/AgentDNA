@@ -63,13 +63,36 @@ export function redactSecrets(
   return out.length > 300 ? `${out.slice(0, 297)}...` : out;
 }
 
+const MAX_CAUSE_DEPTH = 4;
+
+/**
+ * Flatten an error and its cause chain.
+ *
+ * The SDK reports facilitator problems as a generic top-level message and hangs
+ * the real reason (an HTTP status, a DNS failure) off `cause`. Reporting only
+ * `message` throws away the only part that identifies the fault, so walk the
+ * chain. Absence of a cause is itself diagnostic: it means the facilitator
+ * answered successfully and simply returned nothing usable.
+ */
+export function errorChain(err: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; current !== undefined && current !== null && depth < MAX_CAUSE_DEPTH; depth++) {
+    parts.push(current instanceof Error ? current.message : String(current));
+    current =
+      current instanceof Error
+        ? (current as Error & { cause?: unknown }).cause
+        : undefined;
+  }
+  return parts.join(" <- caused by: ");
+}
+
 export function describeWiringFailure(
   stage: WiringStage,
   err: unknown,
   env?: Record<string, string | undefined>,
 ): WiringFailure {
-  const raw = err instanceof Error ? err.message : String(err);
-  return { stage, detail: redactSecrets(raw, env) };
+  return { stage, detail: redactSecrets(errorChain(err), env) };
 }
 
 /**
